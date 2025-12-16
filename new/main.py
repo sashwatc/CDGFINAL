@@ -291,6 +291,8 @@ def load_smart_bg(level, row, col):
         return None
     return None
 
+
+
 def _load_player_sheet(filename):
     """Slice a horizontal sprite sheet into frames scaled to the player rect."""
     sheet_path = os.path.join(ASSETS_DIR, "characters", "New Folder With Items", filename)
