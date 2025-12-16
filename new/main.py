@@ -708,7 +708,7 @@ room_data = {
         "npcs": [],
         "items": []
     },
-
+#Charan 
     # ------------------------------------------------------
     # LEVEL 1  –  cyberpunk / neon city  (EMPTY SHELLS)
     # ------------------------------------------------------
@@ -756,8 +756,7 @@ room_data = {
                  "interactive": []
                  , "npcs": [],
                  "items": []},
-    (1, 1, 1): {"name": "Neon Streets",      
-                "objects": [],
+    (1, 1, 1): {"name": "Neon Streets",      "objects": [{"type": "invisible", "x": 100, "y": 215, "width": 155, "height": 125}],
                  "interactive": []
                  , "npcs": [],
                    "items": []},
