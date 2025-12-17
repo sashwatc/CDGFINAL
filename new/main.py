@@ -763,7 +763,9 @@ room_data = {
                  , "npcs": [],
                    "items": []},
     (1, 1, 2): {"name": "Factory Exterior",  
-                "objects": [],
+                "objects": [{"type": "invisible", "x": 280, "y": 305, "width": 225, "height": 195},
+                            {"type": "invisible", "x": 700, "y": 135, "width": 175, "height": 505}
+                            ],
                  "interactive": []
                  , "npcs": [],
                    "items": []},
@@ -921,8 +923,8 @@ def enter_level_2():
     global boss_defeated, boss_drop_collected
     
     current_room[0] = 1          
-    current_room[1] = 0          
-    current_room[2] = 0          
+    current_room[1] = 1          
+    current_room[2] = 2          
     player.center = (ROOM_WIDTH // 2, ROOM_HEIGHT // 2)
    
     health = 100
