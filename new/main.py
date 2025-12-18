@@ -5,6 +5,7 @@
 import pygame
 import os
 import math
+import random
 
 # core game loop for Chronicles of Time: handles movement, combat, UI, and progression.
 
@@ -303,6 +304,7 @@ def _load_player_sheet(filename):
     
     frame_height = sheet.get_height()
     frame_width = frame_height  # sheets are square and laid out horizontally
+    
     cols = max(1, sheet.get_width() // frame_width)
     frames = []
     for i in range(cols):
@@ -355,6 +357,8 @@ def load_item_image(item_type):
         return load_image(f"items/{item_type}.png", 45, 45)  
     elif item_type == "timeshard":
         return load_image(f"items/{item_type}.png", 50, 50)  
+    elif item_type == "keycard":
+        return load_image(f"items/keycard.png", 45, 45)
     return load_image(f"items/{item_type}.png", 25, 25)
 
 def get_npc_size(npc_type):
@@ -367,11 +371,24 @@ def get_npc_size(npc_type):
         return (70, 90)  
     elif npc_type == "knight":
         return (50, 70) 
+    elif npc_type == "timebandit":
+        return (45, 65)
+    elif npc_type == "boss2":
+        return (110, 130)
     return (35, 55)
 
 def load_npc_image(npc_type):
     size = get_npc_size(npc_type)
-    return load_image(f"npcs/{npc_type}.png", size[0], size[1])
+    # try singular filename first, then plural (some assets may be named 'timebandits.png')
+    primary = f"npcs/{npc_type}.png"
+    plural = f"npcs/{npc_type}s.png"
+    primary_path = os.path.join(ASSETS_DIR, primary)
+    plural_path = os.path.join(ASSETS_DIR, plural)
+    if os.path.exists(primary_path):
+        return load_image(primary, size[0], size[1])
+    if os.path.exists(plural_path):
+        return load_image(plural, size[0], size[1])
+    return load_image(primary, size[0], size[1])
 
 def load_axe_image():
     """Load the boss axe image."""
@@ -421,6 +438,31 @@ safe_code = "4231"
 safe_input = ""
 safe_unlocked = False
 safe_visible = False
+
+#  Data Hub cipher system
+cipher_plain = "I am Bon Bon"
+cipher_visible = False
+cipher_input = ""
+cipher_shift = 0
+cipher_text_shifted = ""
+
+def caesar_shift(text, shift):
+    out = []
+    for ch in text:
+        if ch.isalpha():
+            base = 'A' if ch.isupper() else 'a'
+            out.append(chr((ord(ch) - ord(base) + shift) % 26 + ord(base)))
+        else:
+            out.append(ch)
+    return ''.join(out)
+
+def start_cipher():
+    global cipher_shift, cipher_text_shifted, cipher_input, cipher_visible
+    cipher_shift = random.randint(1, 25)
+    cipher_text_shifted = caesar_shift(cipher_plain, cipher_shift)
+    cipher_input = ""
+    cipher_visible = True
+    set_message("Data Hub activated: decode the message", (0, 200, 255), 3.0)
 
 # maze system
 maze_visible = False
@@ -518,6 +560,8 @@ npc_dialogues = {
         "Cyber Guide: This is the year 2187 - technology has evolved.",
         "Cyber Guide: You'll need advanced weapons here. Visit the Alley Market.",
         "Cyber Guide: They sell laser weapons with rapid fire rates.",
+        "Cyber Guide: Be warned — Time Bandits have infested the Neon Streets and Core Reactor area.",
+        "Cyber Guide: Clear them out and return for a reward.",
         "Quest Updated: Buy a laser weapon from Neon Market"
     ],
     (1, 0, 1, "market_vendor"): [
@@ -562,6 +606,30 @@ def _init_goblin_rooms():
         }
 
 _init_goblin_rooms()
+
+# -------------------- Time Bandits (Cyber Level) --------------------
+TIMEBANDIT_WAVES = {
+    # Neon Streets (Level 1, row 1, col 1)
+    (1, 1, 1): [
+        [(220, 220), (520, 300)],
+        [(180, 420), (600, 200), (360, 520)],
+    ],
+}
+
+timebandit_rooms = {}
+
+def _init_timebandits():
+    """Prepare time-bandit wave state for configured rooms."""
+    for room_key, waves in TIMEBANDIT_WAVES.items():
+        timebandit_rooms[room_key] = {
+            "waves": waves,
+            "wave_index": 0,
+            "active": [],
+            "respawn": 0.0,
+            "key_given": False,
+        }
+
+_init_timebandits()
 
 # room data, this uses a dictionary to define room layouts and contents
 room_data = {
@@ -728,7 +796,7 @@ room_data = {
                    {"type": "invisible", "x": 610,   "y": 300, "width": 400, "height": 100}], 
         "interactive": [], 
         "npcs": [
-            {"id": "herbcollector", "x": 400, "y": 500, "name": "Cyber Guide"},
+            {"id": "cyber_guide", "x": 400, "y": 500, "name": "Cyber Guide"},
         ], 
         "items": []
     },
@@ -745,10 +813,12 @@ room_data = {
     "items": []
     },
     (1, 0, 2): {"name": "Data Hub",          
-                "objects": [],
-                 "interactive": []
-                 , "npcs": [],
-                   "items": []},
+                                "objects": [],
+                                 "interactive": [
+                                         {"type": "datahub", "x": 360, "y": 360, "width": 80, "height": 80}
+                                 ],
+                                 "npcs": [],
+                                     "items": []},
     (1, 1, 0): {"name": "Subway Tunnels",    
                 "objects": [
                                                         {"type": "invisible", "x": 143, "y": 710, "width": 225, "height": 75},
@@ -1108,6 +1178,77 @@ def collect_boss_drops():
             quests["find_shard_1"]["complete"] = True
             set_message("Collected Time Shard and Key from Goblin King!", (0, 255, 0), 3.0)
 
+# ------------------ SECOND BOSS (AI Control Room) ------------------
+boss2 = None
+boss2_health = 0
+boss2_max_health = 0
+boss2_alive = False
+boss2_defeated = False
+
+def init_boss2():
+    """Initialize the AI boss in the AI Control Room."""
+    global boss2, boss2_health, boss2_max_health, boss2_alive, boss2_defeated
+    boss2 = {"rect": pygame.Rect(350, 300, 110, 130), "alive": True}
+    boss2_max_health = max_health * 3
+    boss2_health = boss2_max_health
+    boss2_alive = True
+    boss2_defeated = False
+
+def update_boss2(dt):
+    """Simple boss behavior: slowly chase player and damage on contact."""
+    global boss2_health, boss2_alive, health, boss2_defeated
+    if not boss2 or not boss2.get("alive", False):
+        return
+    dt_sec = dt / 1000.0
+    dx = player.centerx - boss2["rect"].centerx
+    dy = player.centery - boss2["rect"].centery
+    dist = math.hypot(dx, dy)
+    if dist > 0 and dist < 500:
+        step = 120 * dt_sec
+        boss2["rect"].x += (dx / dist) * step
+        boss2["rect"].y += (dy / dist) * step
+    # contact damage if close
+    if player.colliderect(boss2["rect"]):
+        health = max(0, health - 25)
+
+def check_boss2_hit():
+    global boss2_health, bullets, boss2_alive, boss2_defeated
+    if not boss2 or not boss2.get("alive", False):
+        return
+    bullets_to_remove = []
+    for i, bullet in enumerate(bullets):
+        bullet_rect = pygame.Rect(bullet["x"] - 2, bullet["y"] - 2, 4, 4)
+        if boss2["rect"].colliderect(bullet_rect):
+            boss2_health -= bullet["damage"]
+            bullets_to_remove.append(i)
+            if boss2_health <= 0:
+                boss2["alive"] = False
+                boss2_alive = False
+                boss2_defeated = True
+                # spawn drops in the AI Control Room
+                room_key = (1, 2, 2)
+                room_info = room_data.get(room_key, {})
+                if room_info is not None:
+                    room_info.setdefault("items", []).append({"type": "timeshard", "x": boss2["rect"].centerx - 25, "y": boss2["rect"].centery - 25, "id": "timeshard_ai_1"})
+                    room_info.setdefault("items", []).append({"type": "keycard", "x": boss2["rect"].centerx + 15, "y": boss2["rect"].centery - 25, "id": "keycard_ai_1"})
+                set_message("AI Core defeated! Drops spawned in the room.", (0, 255, 0), 3.0)
+    for i in sorted(bullets_to_remove, reverse=True):
+        bullets.pop(i)
+
+def draw_boss2(surface):
+    if not boss2 or not boss2.get("alive", False):
+        return
+    img = load_npc_image("boss2")
+    surface.blit(img, (boss2["rect"].x, boss2["rect"].y))
+    # health bar
+    health_width = 250
+    health_x = ROOM_WIDTH // 2 - health_width // 2
+    health_y = 20
+    pygame.draw.rect(surface, (100, 0, 0), (health_x, health_y, health_width, 20))
+    pygame.draw.rect(surface, (255, 0, 0), (health_x, health_y, health_width * (boss2_health / boss2_max_health), 20))
+    pygame.draw.rect(surface, (255, 255, 255), (health_x, health_y, health_width, 20), 2)
+
+
 #  weapon and shooting system
 def shoot_bullet():
     global ammo, shoot_cooldown, is_reloading, is_laser_weapon
@@ -1203,10 +1344,37 @@ def update_bullets(dt):
                         set_message(message_text, (255, 215, 0), 1.5)
                     bullets_to_remove.append(i)
                     break
+        # check time bandits as well
+        tb_state = timebandit_rooms.get(room_key)
+        if tb_state:
+            w, h = get_npc_size("timebandit")
+            for tb in tb_state["active"]:
+                if not tb.get("alive", True):
+                    continue
+                tb_rect = pygame.Rect(tb["x"], tb["y"], w, h)
+                if tb_rect.collidepoint(bullet["x"], bullet["y"]):
+                    tb["alive"] = False
+                    if not tb.get("loot_given"):
+                        inventory["Gold"] += 15
+                        tb["loot_given"] = True
+                        set_message("+15 Gold (Time Bandit)", (255, 215, 0), 1.5)
+                    bullets_to_remove.append(i)
+                    break
+
+            # If all waves finished and none active, spawn a keycard in this room once
+            if not any(tb.get("alive", True) for tb in tb_state["active"]) and tb_state["wave_index"] >= len(tb_state["waves"]) and not tb_state.get("key_given"):
+                room_info = room_data.get(room_key, {})
+                items = room_info.get("items")
+                if items is not None:
+                    items.append({"type": "keycard", "x": ROOM_WIDTH//2 - 20, "y": ROOM_HEIGHT//2 - 20, "id": f"keycard_timebandit_{room_key[1]}_{room_key[2]}"})
+                tb_state["key_given"] = True
+                set_message("A Keycard has appeared!", (255, 215, 0), 3.0)
     
    
     if tuple(current_room) == (0, 2, 0) and boss and boss["alive"]:
         check_boss_hit()
+    if tuple(current_room) == (1, 2, 2) and boss2 and boss2.get("alive", False):
+        check_boss2_hit()
     
 
     for i in sorted(bullets_to_remove, reverse=True):
@@ -1505,7 +1673,7 @@ def draw_object(x, y, obj_type, surface, level, width=None, height=None):
     if obj_type in ["tree", "rock", "building", "bridge_wall", "bridge"]:
         colliders.append(rect)
     
-    if obj_type in ["anvil", "campfire", "cage", "lever", "portal", "bookshelf", "rune", "safe"]:
+    if obj_type in ["anvil", "campfire", "cage", "lever", "portal", "bookshelf", "rune", "safe", "datahub"]:
         interactive_objects.append({"rect": rect, "type": obj_type, "x": x, "y": y})
         if obj_type != "portal":  
             colliders.append(rect)
@@ -1637,6 +1805,18 @@ def draw_goblins(surface, room_key):
         # Goblins handle their own collision/damage; keep them out of the collider list
         # so they do not push the player back like walls.
 
+def draw_timebandits(surface, room_key):
+    """Draw time-bandit enemies for the current room."""
+    state = timebandit_rooms.get(room_key)
+    if not state:
+        return
+    w, h = get_npc_size("timebandit")
+    for tb in state["active"]:
+        if not tb.get("alive", True):
+            continue
+        img = load_npc_image("timebandit")
+        surface.blit(img, (tb["x"], tb["y"]))
+
 def draw_item(surface, x, y, item_type, item_id):
     """Draw items using images."""
     
@@ -1731,10 +1911,14 @@ def draw_room(surface, level, row, col):
 
     # Draw enemies
     draw_goblins(surface, room_key)
+    draw_timebandits(surface, room_key)
     
     # Draw boss if in throne room
     if room_key == (0, 2, 0) and boss and boss["alive"]:
         draw_boss(surface)
+    # Draw boss2 if in AI Control Room
+    if room_key == (1, 2, 2) and boss2 and boss2.get("alive", False):
+        draw_boss2(surface)
     
     # Draw boss drops if defeated
     if room_key == (0, 2, 0) and boss_defeated and not boss_drop_collected:
@@ -2259,6 +2443,46 @@ def handle_maze_input():
         return True
     return False
 
+    def draw_cipher_overlay(surface):
+        """Draw the Data Hub cipher overlay when active."""
+        if not cipher_visible:
+            return
+
+        overlay = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 220))
+        surface.blit(overlay, (0, 0))
+
+        box = pygame.Rect(150, 180, 500, 300)
+        pygame.draw.rect(surface, (10, 20, 30), box)
+        pygame.draw.rect(surface, (0, 200, 255), box, 3)
+
+        title = title_font.render("DATA HUB", True, (0, 255, 255))
+        surface.blit(title, (ROOM_WIDTH//2 - title.get_width()//2, box.y + 10))
+
+        shifted_text = small_font.render(f"Cipher: {cipher_text_shifted}", True, (200, 200, 255))
+        surface.blit(shifted_text, (box.x + 20, box.y + 80))
+
+        prompt = small_font.render("Enter decoded phrase and press ENTER:", True, (200, 200, 200))
+        surface.blit(prompt, (box.x + 20, box.y + 120))
+
+        input_box = pygame.Rect(box.x + 20, box.y + 150, box.width - 40, 40)
+        pygame.draw.rect(surface, (30, 30, 50), input_box)
+        pygame.draw.rect(surface, (100, 100, 150), input_box, 2)
+
+        input_text_surf = font.render(cipher_input, True, (255, 255, 255))
+        surface.blit(input_text_surf, (input_box.x + 10, input_box.y + 6))
+
+        hint = small_font.render("Hint: It's a simple Caesar shift", True, (150, 150, 200))
+        surface.blit(hint, (box.x + 20, box.y + 210))
+
+        close_rect = pygame.Rect(box.centerx - 50, box.bottom - 50, 100, 36)
+        pygame.draw.rect(surface, (100, 0, 100), close_rect)
+        pygame.draw.rect(surface, (255, 0, 255), close_rect, 2)
+        close_text = small_font.render("CLOSE", True, (255, 255, 255))
+        surface.blit(close_text, (close_rect.centerx - close_text.get_width()//2, close_rect.centery - close_text.get_height()//2))
+
+        return close_rect
+
 # ===== NEW UI FUNCTIONS =====
 def create_button(text, x, y, width, height, hover=False):
     """Create a button with hover effect."""
@@ -2506,6 +2730,57 @@ def update_goblins(dt):
             goblin_contact_cooldown = 0.75
             set_message(f"-{GOBLIN_CONTACT_DAMAGE} HP (Goblin)", (255, 80, 80), 1.0)
 
+
+def update_timebandits(dt):
+    """Move Time Bandits toward the player in configured cyber rooms."""
+    room_key = tuple(current_room)
+    state = timebandit_rooms.get(room_key)
+    if not state:
+        return
+    if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible:
+        return
+    global goblin_contact_cooldown, health
+
+    dt_sec = dt / 1000.0
+
+    # Spawn next wave when current is cleared
+    if not any(tb.get("alive", True) for tb in state["active"]):
+        if state["wave_index"] < len(state["waves"]):
+            state["respawn"] -= dt_sec
+            if state["respawn"] <= 0:
+                spawn = state["waves"][state["wave_index"]]
+                state["active"] = [{"x": float(x), "y": float(y), "alive": True, "loot_given": False} for x, y in spawn]
+                state["wave_index"] += 1
+                state["respawn"] = 1.0
+                set_message("Time Bandits incoming!", (200, 80, 255), 1.5)
+        return
+
+    # Chase the player
+    w, h = get_npc_size("timebandit")
+    speed = 160
+    for tb in state["active"]:
+        if not tb.get("alive", True):
+            continue
+        gx = tb["x"] + w / 2
+        gy = tb["y"] + h / 2
+        dx = player.centerx - gx
+        dy = player.centery - gy
+        dist = math.hypot(dx, dy)
+        if dist <= 1:
+            continue
+        step = speed * dt_sec
+        tb["x"] += (dx / dist) * step
+        tb["y"] += (dy / dist) * step
+        tb["x"] = max(0, min(ROOM_WIDTH - w, tb["x"]))
+        tb["y"] = max(0, min(ROOM_HEIGHT - h, tb["y"]))
+
+        # Contact damage
+        tb_rect = pygame.Rect(tb["x"], tb["y"], w, h)
+        if tb_rect.colliderect(player) and goblin_contact_cooldown <= 0:
+            health = max(0, health - GOBLIN_CONTACT_DAMAGE)
+            goblin_contact_cooldown = 0.75
+            set_message(f"-{GOBLIN_CONTACT_DAMAGE} HP (Time Bandit)", (255, 80, 80), 1.0)
+
 def pickup_items():
     """Handle item collection."""
     global message, message_timer, message_color, health, player_speed_boost_timer
@@ -2540,25 +2815,34 @@ def pickup_items():
     room_key = tuple(current_room)
     room_info = room_data.get(room_key, {})
     for item in room_info.get("items", []):
-        if item["type"] in ["key", "timeshard"]:
+        if item["type"] in ["key", "timeshard", "keycard"]:
             # Create appropriate sized collision rectangle
             if item["type"] == "key":
                 item_rect = pygame.Rect(item["x"], item["y"], 45, 45)
             elif item["type"] == "timeshard":
                 item_rect = pygame.Rect(item["x"], item["y"], 50, 50)
+            elif item["type"] == "keycard":
+                item_rect = pygame.Rect(item["x"], item["y"], 45, 45)
             else:
                 item_rect = pygame.Rect(item["x"], item["y"], 25, 25)
                 
-            if player.colliderect(item_rect.inflate(20, 20)) and (room_key[0], room_key[1], room_key[2], item["x"], item["y"]) not in collected_keys and item["type"] == "key":
-                inventory["Keys"] += 1
-                collected_keys.add((room_key[0], room_key[1], room_key[2], item["x"], item["y"]))
-                set_message("+1 Key", (255, 215, 0), 1.5)
-                break
-            elif player.colliderect(item_rect.inflate(20, 20)) and (room_key[0], room_key[1], room_key[2], item["x"], item["y"]) not in collected_timeshards and item["type"] == "timeshard":
-                inventory["Time Shards"] += 1
-                collected_timeshards.add((room_key[0], room_key[1], room_key[2], item["x"], item["y"]))
-                set_message("+1 Time Shard!", (150, 150, 255), 2.0)
-                break
+            if player.colliderect(item_rect.inflate(20, 20)):
+                key_tuple = (room_key[0], room_key[1], room_key[2], item["x"], item["y"])
+                if item["type"] == "key" and key_tuple not in collected_keys:
+                    inventory["Keys"] += 1
+                    collected_keys.add(key_tuple)
+                    set_message("+1 Key", (255, 215, 0), 1.5)
+                    break
+                elif item["type"] == "keycard" and key_tuple not in collected_keys:
+                    inventory["Keys"] += 1
+                    collected_keys.add(key_tuple)
+                    set_message("+1 Keycard", (255, 215, 0), 1.5)
+                    break
+                elif item["type"] == "timeshard" and key_tuple not in collected_timeshards:
+                    inventory["Time Shards"] += 1
+                    collected_timeshards.add(key_tuple)
+                    set_message("+1 Time Shard!", (150, 150, 255), 2.0)
+                    break
 
 def set_message(text, color, duration):
     """Helper to queue on-screen messages safely."""
@@ -2616,6 +2900,15 @@ def handle_interaction():
                                 quests["talk_to_elder"]["complete"] = True
                                 quests["buy_weapon"]["active"] = True
                                 set_message("Quest Updated! Visit the blacksmith.", (0, 255, 0), 2.0)
+                            # Special cyber guide in Level 2: give time bandits quest
+                            if room_key == (1, 0, 0) and npc.get("id") == "cyber_guide":
+                                if not quests.get("kill_time_bandits"):
+                                    quests["kill_time_bandits"] = {"active": True, "complete": False, "description": "Eliminate Time Bandits in Neon Streets"}
+                                    # start spawns quickly
+                                    tb_state = timebandit_rooms.get((1,1,1))
+                                    if tb_state:
+                                        tb_state["respawn"] = 0.1
+                                    set_message("Quest: Kill the Time Bandits in the Neon Streets!", (200, 180, 255), 4.0)
                     return
 
 
@@ -2659,6 +2952,10 @@ def handle_interaction():
                 else:
                     need = 2 - inventory["Keys"]
                     set_message(f"You need {need} more key(s) to activate the portal!", (255, 200, 0), 2.0)
+            elif obj_type == "datahub" and room_key == (1, 0, 2):
+                # Start cipher puzzle
+                start_cipher()
+                return
    
     if room_key == (1, 0, 1):  
         for inter_obj in interactive_objects:
@@ -2721,6 +3018,7 @@ back_button_hover = False
 
 
 boss_initialized = False
+boss2_initialized = False
 
 # main loop listens for input updates game state and draws world
 while running:
@@ -2803,12 +3101,39 @@ while running:
                 # Check close button
                 if close_rect.collidepoint(mouse_pos):
                     maze_visible = False
+            elif game_state == "playing" and cipher_visible:
+                # compute the same close rect used in draw_cipher_overlay
+                box = pygame.Rect(150, 180, 500, 300)
+                close_rect = pygame.Rect(box.centerx - 50, box.bottom - 50, 100, 36)
+                if close_rect.collidepoint(mouse_pos):
+                    cipher_visible = False
         
         elif event.type == pygame.KEYDOWN:
             if game_state == "playing":
                 if maze_visible:
                     # arrow keys move through the maze overlay
                     handle_maze_input()
+                
+                elif cipher_visible:
+                    # Capture cipher input for Data Hub
+                    if event.key == pygame.K_BACKSPACE:
+                        cipher_input = cipher_input[:-1]
+                    elif event.key == pygame.K_ESCAPE:
+                        cipher_visible = False
+                    elif event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
+                        # submit
+                        if cipher_input.strip().lower() == cipher_plain.lower():
+                            cipher_visible = False
+                            # give keycard
+                            inventory["Keys"] += 1
+                            collected_keys.add((current_room[0], current_room[1], current_room[2], ROOM_WIDTH//2 - 20, ROOM_HEIGHT//2 - 20))
+                            set_message("Correct! You received a Keycard!", (0, 255, 0), 3.0)
+                        else:
+                            set_message("Incorrect. Try again.", (255, 0, 0), 1.5)
+                            cipher_input = ""
+                    else:
+                        if len(event.unicode) == 1 and (event.unicode.isalpha() or event.unicode.isspace()):
+                            cipher_input += event.unicode
                 
                 elif safe_visible:
                     # capture safe code input
@@ -2901,6 +3226,10 @@ while running:
             init_boss()
             boss_initialized = True
         
+        if tuple(current_room) == (1, 2, 2) and not boss2_initialized:
+            init_boss2()
+            boss2_initialized = True
+        
 
         mv_x = (keys_pressed[pygame.K_d] or keys_pressed[pygame.K_RIGHT]) - (keys_pressed[pygame.K_a] or keys_pressed[pygame.K_LEFT])
         mv_y = (keys_pressed[pygame.K_s] or keys_pressed[pygame.K_DOWN]) - (keys_pressed[pygame.K_w] or keys_pressed[pygame.K_UP])
@@ -2922,10 +3251,15 @@ while running:
         
         # Update enemy movement before drawing the room
         update_goblins(dt)
+        update_timebandits(dt)
         
         # Update boss if in throne room
         if tuple(current_room) == (0, 2, 0) and boss and boss["alive"]:
             update_boss(dt)
+        # Update AI boss if in AI Control Room
+        if tuple(current_room) == (1, 2, 2) and boss2 and boss2.get("alive", False):
+            update_boss2(dt)
+            check_boss2_hit()
         
         # Draw room
         draw_room(screen, *current_room)
@@ -2991,6 +3325,9 @@ while running:
         
         if maze_visible:
             close_rect = draw_maze_puzzle(screen)
+        
+        if cipher_visible:
+            cipher_close = draw_cipher_overlay(screen)
         
        
         near_object = False
