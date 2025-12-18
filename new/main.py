@@ -486,10 +486,13 @@ def handle_cipher_key(event):
     if event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
         if cipher_input.strip().lower() == cipher_plain.lower():
             cipher_visible = False
-            # spawn a keycard pickup in this room center
+            # spawn a keycard pickup to the side of the Data Hub
             room_key = tuple(current_room)
             room_info = room_data.get(room_key, {})
-            room_info.setdefault("items", []).append({"type": "keycard", "x": ROOM_WIDTH//2 - 20, "y": ROOM_HEIGHT//2 - 20, "id": f"keycard_datahub_{room_key[1]}_{room_key[2]}"})
+            # Spawn keycard to the right side of the room
+            keycard_x = ROOM_WIDTH - 100
+            keycard_y = ROOM_HEIGHT // 2
+            room_info.setdefault("items", []).append({"type": "keycard", "x": keycard_x, "y": keycard_y, "id": f"keycard_datahub_{room_key[1]}_{room_key[2]}"})
             set_message("Correct! A Keycard has been spawned in the Data Hub.", (0, 255, 0), 3.0)
         else:
             set_message("Incorrect. Try again.", (255, 0, 0), 1.5)
@@ -908,6 +911,36 @@ def _init_goblins():
         goblin_states[forest_key] = spawn
 
 _init_goblins()
+
+# Seed moderate credits across Level 2 so they're always present (2 per room)
+def _seed_level2_credits():
+    level2_rooms = [(1, r, c) for r in range(3) for c in range(3)]
+    for room_key in level2_rooms:
+        room_info = room_data.get(room_key, {})
+        # don't duplicate if credits already present
+        existing = any(it.get("type") == "credit" for it in room_info.get("items", []))
+        if existing:
+            continue
+        # Get invisible barriers for this room to avoid spawning in them
+        barriers = [obj for obj in room_info.get("objects", []) if obj.get("type") == "invisible"]
+        for i in range(2):
+            # Try to find a valid spawn location not in a barrier
+            valid = False
+            attempts = 0
+            while not valid and attempts < 10:
+                cx = random.randint(100, ROOM_WIDTH - 100)
+                cy = random.randint(100, ROOM_HEIGHT - 100)
+                # Check if this point is inside any barrier
+                point_rect = pygame.Rect(cx, cy, 1, 1)
+                in_barrier = any(point_rect.colliderect(pygame.Rect(b["x"], b["y"], b["width"], b["height"])) for b in barriers)
+                valid = not in_barrier
+                attempts += 1
+            # If we found a valid spot, add the credit
+            if valid:
+                cid = f"credit_{room_key[1]}_{room_key[2]}_{random.randint(1000,9999)}_{i}"
+                room_info.setdefault("items", []).append({"type": "credit", "x": cx, "y": cy, "id": cid})
+
+_seed_level2_credits()
 
 #  BOSS FUNCTIONS 
 def init_boss():
@@ -1478,16 +1511,19 @@ boss2_max_health = 0
 boss2_alive = False
 boss2_defeated = False
 boss2_phase = 1  # Phase 1: 300 HP, Phase 2: 450 HP (activated at 150 HP)
-boss2_phase1_hp = 300
-boss2_phase2_hp = 450
+boss2_phase1_hp = 3000
+boss2_phase2_hp = 6000  # Phase 2: doubled HP
 boss2_laser_cooldown = 0.0
 boss2_laser_charge_index = 0  # 0-2 for three charges
 boss2_lasers = []  # List of active laser beams
 boss2_contact_cooldown = 0.0  # Cooldown between contact damage hits (3 seconds)
+boss2_projectiles = []  # Boss projectiles
+boss2_attack_cooldown = 0.0  # Cooldown between attack cycles
+boss2_accuracy = 0.75  # 75% accuracy in phase 1, 80% in phase 2
 
 def init_boss2():
     """Initialize the AI boss in the AI Control Room."""
-    global boss2, boss2_health, boss2_max_health, boss2_alive, boss2_defeated, boss2_phase, boss2_laser_cooldown, boss2_laser_charge_index, boss2_lasers, boss2_contact_cooldown
+    global boss2, boss2_health, boss2_max_health, boss2_alive, boss2_defeated, boss2_phase, boss2_laser_cooldown, boss2_laser_charge_index, boss2_lasers, boss2_contact_cooldown, boss2_projectiles, boss2_attack_cooldown, boss2_accuracy
     # place boss2 below and to the right of the player's spawn when entering level 2
     try:
         px, py = player.centerx, player.centery
@@ -1506,10 +1542,13 @@ def init_boss2():
     boss2_laser_charge_index = 0
     boss2_lasers = []
     boss2_contact_cooldown = 0.0
+    boss2_projectiles = []
+    boss2_attack_cooldown = 0.0
+    boss2_accuracy = 0.45  # Phase 1: 45% accuracy
 
 def update_boss2(dt):
     """Boss2 behavior: Phase 1 chases player, Phase 2 (at 150 HP) charges and fires lasers."""
-    global boss2_health, boss2_alive, health, boss2_defeated, boss2_phase, boss2_laser_cooldown, boss2_laser_charge_index, boss2_lasers, boss2_contact_cooldown
+    global boss2_health, boss2_alive, health, boss2_defeated, boss2_phase, boss2_laser_cooldown, boss2_laser_charge_index, boss2_lasers, boss2_contact_cooldown, boss2_projectiles, boss2_attack_cooldown, boss2_accuracy
     if not boss2 or not boss2.get("alive", False):
         return
     
@@ -1519,6 +1558,7 @@ def update_boss2(dt):
     # Check phase transition: enter phase 2 when health drops to 150 HP or below
     if boss2_phase == 1 and boss2_health <= boss2_phase1_hp / 2:
         boss2_phase = 2
+        boss2_accuracy = 0.80  # Phase 2: 80% accuracy
         set_message("Phase 2: Boss goes berserk!", (255, 100, 0), 2.0)
     
     # Phase 1: Simple chase (120 speed)
@@ -1530,12 +1570,26 @@ def update_boss2(dt):
             step = 120 * dt_sec
             boss2["rect"].x += (dx / dist) * step
             boss2["rect"].y += (dy / dist) * step
-        # contact damage if close (every 3 seconds max)
-        if player.colliderect(boss2["rect"]) and boss2_contact_cooldown <= 0:
-            health = max(0, health - 15)  # Phase 1: 15 damage (can't one-shot)
-            player_electrified_timer = 3.0  # Electrified for 3 seconds
-            set_message("You are ELECTRIFIED!", (0, 200, 255), 2.0)
-            boss2_contact_cooldown = 3.0
+        # Phase 1: Fire projectiles at player with 45% accuracy
+        if boss2_attack_cooldown <= 0 and dist < 500:
+            if random.random() < boss2_accuracy:
+                # Fire projectile at player
+                proj_dx = player.centerx - boss2["rect"].centerx
+                proj_dy = player.centery - boss2["rect"].centery
+                proj_dist = math.hypot(proj_dx, proj_dy)
+                if proj_dist > 0:
+                    # Normalize and scale to projectile speed (similar to player bullets)
+                    proj_speed = 300  # pixels per second
+                    proj_vx = (proj_dx / proj_dist) * proj_speed
+                    proj_vy = (proj_dy / proj_dist) * proj_speed
+                    boss2_projectiles.append({
+                        "x": boss2["rect"].centerx,
+                        "y": boss2["rect"].centery,
+                        "vx": proj_vx,
+                        "vy": proj_vy,
+                        "lifetime": 5.0
+                    })
+            boss2_attack_cooldown = 0.25  # Fire every 0.25 seconds
     
     # Phase 2: Increased speed (180), charging and laser attacks
     elif boss2_phase == 2:
@@ -1546,12 +1600,26 @@ def update_boss2(dt):
             step = 180 * dt_sec  # 1.5x base speed
             boss2["rect"].x += (dx / dist) * step
             boss2["rect"].y += (dy / dist) * step
-        # contact damage if close: every 3 seconds max (was 20)
-        if player.colliderect(boss2["rect"]) and boss2_contact_cooldown <= 0:
-            health = max(0, health - 20)  # Phase 2: 20 damage (can't one-shot)
-            player_electrified_timer = 3.0  # Electrified for 3 seconds
-            set_message("You are ELECTRIFIED!", (0, 200, 255), 2.0)
-            boss2_contact_cooldown = 3.0
+        # Phase 2: Fire projectiles with 50% accuracy
+        if boss2_attack_cooldown <= 0 and dist < 500:
+            if random.random() < boss2_accuracy:
+                # Fire projectile at player
+                proj_dx = player.centerx - boss2["rect"].centerx
+                proj_dy = player.centery - boss2["rect"].centery
+                proj_dist = math.hypot(proj_dx, proj_dy)
+                if proj_dist > 0:
+                    # Normalize and scale to projectile speed
+                    proj_speed = 300  # pixels per second
+                    proj_vx = (proj_dx / proj_dist) * proj_speed
+                    proj_vy = (proj_dy / proj_dist) * proj_speed
+                    boss2_projectiles.append({
+                        "x": boss2["rect"].centerx,
+                        "y": boss2["rect"].centery,
+                        "vx": proj_vx,
+                        "vy": proj_vy,
+                        "lifetime": 5.0
+                    })
+            boss2_attack_cooldown = 0.25  # Fire every 0.25 seconds
         
         # Laser charging and firing: 10 second cycle
         boss2_laser_cooldown += dt_sec
@@ -1589,6 +1657,34 @@ def update_boss2(dt):
             boss2_laser_charge_index = 0
             boss2["charge_locations"] = None
             boss2["lasers_fired"] = False
+    
+    # Decrement attack cooldown
+    boss2_attack_cooldown -= dt_sec
+    
+    # Update projectiles: move, check collisions, and remove after lifetime
+    projectiles_to_remove = []
+    for i, proj in enumerate(boss2_projectiles):
+        proj["x"] += proj["vx"] * dt_sec
+        proj["y"] += proj["vy"] * dt_sec
+        proj["lifetime"] -= dt_sec
+        
+        # Check if projectile hits player
+        if proj["lifetime"] > 0:
+            proj_rect = pygame.Rect(proj["x"] - 4, proj["y"] - 4, 8, 8)
+            if player.colliderect(proj_rect):
+                health = max(0, health - 12)  # 12 damage per hit
+                global player_electrified_timer
+                player_electrified_timer = 2.0  # Electrified for 2 seconds
+                set_message("Hit by boss projectile!", (255, 100, 100), 1.0)
+                projectiles_to_remove.append(i)
+        
+        # Remove if lifetime expired or out of bounds
+        if proj["lifetime"] <= 0 or proj["x"] < -50 or proj["x"] > ROOM_WIDTH + 50 or proj["y"] < -50 or proj["y"] > ROOM_HEIGHT + 50:
+            if i not in projectiles_to_remove:
+                projectiles_to_remove.append(i)
+    
+    for i in sorted(projectiles_to_remove, reverse=True):
+        boss2_projectiles.pop(i)
     
     # Update lasers: check collisions and remove after lifetime
     lasers_to_remove = []
@@ -1660,6 +1756,17 @@ def draw_boss2(surface):
             pygame.draw.circle(surface, color_main, (int(laser["x"]), int(laser["y"])), 12)
             pygame.draw.circle(surface, color_inner, (int(laser["x"]), int(laser["y"])), 9)
             pygame.draw.circle(surface, (50, 100, 200), (int(laser["x"]), int(laser["y"])), 6)
+    
+    # Draw boss2 projectiles as blue balls (like player bullets)
+    for proj in boss2_projectiles:
+        if proj["lifetime"] > 0:
+            # Draw blue projectile (same style as player bullets)
+            color_main = (0, 150, 255)  # Blue
+            color_inner = (100, 200, 255)
+            color_edge = (50, 100, 200)
+            pygame.draw.circle(surface, color_main, (int(proj["x"]), int(proj["y"])), 6)
+            pygame.draw.circle(surface, color_inner, (int(proj["x"]), int(proj["y"])), 4)
+            pygame.draw.circle(surface, color_edge, (int(proj["x"]), int(proj["y"])), 2)
     
     # health bar
     health_width = 250
@@ -1793,6 +1900,12 @@ def update_bullets(dt):
                 items = room_info.get("items")
                 if items is not None:
                     items.append({"type": "keycard", "x": ROOM_WIDTH//2 - 20, "y": ROOM_HEIGHT//2 - 20, "id": f"keycard_timebandit_{room_key[1]}_{room_key[2]}"})
+                    # Reward player for clearing the time bandits
+                    try:
+                        inventory["Gold"] += 50
+                        set_message("+50 Gold (Time Bandits cleared)", (255, 215, 0), 2.5)
+                    except Exception:
+                        pass
                 tb_state["key_given"] = True
                 set_message("A Keycard has appeared!", (255, 215, 0), 3.0)
     
@@ -3278,22 +3391,17 @@ def pickup_items():
                 set_message("+1 Key", (255, 215, 0), 1.5)
                 break
 
-            # Keycard triggers credit spawn and disappears
+            # Keycard pickup: remove keycard and reward player
             elif itype == "keycard" and key_tuple not in collected_keys:
                 collected_keys.add(key_tuple)
-                # Remove the keycard from the room
-                room_info["items"].remove(item)
-                # Spawn credits across all Level 2 rooms
-                level2_rooms = [(1, 0, 0), (1, 0, 1), (1, 0, 2), (1, 1, 0), (1, 1, 1), (1, 1, 2), (1, 2, 0), (1, 2, 1), (1, 2, 2)]
-                spawn_count_per_room = 4
-                for level2_room in level2_rooms:
-                    room_info_level2 = room_data.get(level2_room, {})
-                    for i in range(spawn_count_per_room):
-                        cx = random.randint(50, ROOM_WIDTH - 50)
-                        cy = random.randint(50, ROOM_HEIGHT - 50)
-                        cid = f"credit_{level2_room[1]}_{level2_room[2]}_{random.randint(1000,9999)}_{i}"
-                        room_info_level2.setdefault("items", []).append({"type": "credit", "x": cx, "y": cy, "id": cid})
-                set_message("Keycard consumed: Credits scattered across Level 2!", (0, 200, 255), 3.0)
+                # Remove the keycard from the room so it disappears
+                try:
+                    room_info["items"].remove(item)
+                except Exception:
+                    pass
+                # Reward the player for collecting the keycard
+                inventory["Gold"] += 50
+                set_message("+50 Gold (Keycard collected)", (255, 215, 0), 2.5)
                 break
 
             # Credit pickup -> +25 credits (Gold)
@@ -3809,7 +3917,7 @@ while running:
                 near_object = True
                 break
         
-        if near_object and not dialogue_active and not upgrade_shop_visible and not safe_visible and not maze_visible:
+        if near_object and not dialogue_active and not upgrade_shop_visible and not safe_visible and not maze_visible and not cipher_visible:
             hint = small_font.render("Press F to Interact", True, (255, 255, 255))
             screen.blit(hint, (player.centerx - 40, player.top - 25))
             
