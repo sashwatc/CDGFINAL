@@ -44,13 +44,14 @@ POINTER_COLOR = (255, 215, 0)
 POINTER_SIZE = 12
 POINTER_OFFSET_X = -20
 
+
 # damgage zone
 damage_zones = []
 damage_timer = 0.0
 DAMAGE_INTERVAL = 1.0  
 
 #  player setup
-player = pygame.Rect(400, 400, 60, 75)  
+player = pygame.Rect(400, 400, 60, 75) 
 player_speed = 7
 current_room = [0, 0, 0]
 previous_room = tuple(current_room)
@@ -764,7 +765,7 @@ room_data = {
                    "items": []},
     (1, 1, 2): {"name": "Factory Exterior",  
                 "objects": [{"type": "invisible", "x": 280, "y": 305, "width": 225, "height": 195},
-                            {"type": "invisible", "x": 700, "y": 135, "width": 175, "height": 505}
+                            {"type": "invisible", "x": 700, "y": 135, "width": 175, "height": 505},
                             ],
                  "interactive": []
                  , "npcs": [],
@@ -780,7 +781,9 @@ room_data = {
                  , "npcs": [],
                    "items": []},
     (1, 2, 2): {"name": "AI Control Room",      
-                "objects": [], 
+                "objects": [{"type": "invisible", "x": 720, "y": 40, "width": 125, "height": 625},
+                            {"type": "invisible", "x": 520, "y": 670, "width": 225, "height": 55},
+                            {"type": "invisible", "x": 510, "y": 00, "width": 305, "height": 165}], 
                 "interactive": []
                 , "npcs": [],
                   "items": []},
@@ -915,6 +918,257 @@ def throw_axe():
             "angle": 0
         })
         set_message("Boss throws an axe!", (255, 100, 100), 1.0)
+
+# ===== IMPROVED INVENTORY UI SYSTEM =====
+def draw_inventory_hud(surface):
+    """Draw a modern, organized inventory HUD that's always visible."""
+    # Main HUD background (semi-transparent bar at top)
+    hud_height = 110
+    hud_bg = pygame.Surface((ROOM_WIDTH, hud_height), pygame.SRCALPHA)
+    hud_bg.fill((0, 0, 0, 180))  # Dark semi-transparent
+    surface.blit(hud_bg, (0, 0))
+    
+    # Top border for polish
+    pygame.draw.line(surface, (255, 215, 0), (0, hud_height), (ROOM_WIDTH, hud_height), 2)
+    
+    # Draw in sections
+    x_start = 20
+    y_start = 15
+    section_width = (ROOM_WIDTH - 40) // 4
+    
+    # SECTION 1: HEALTH & ARMOR
+    pygame.draw.rect(surface, (30, 30, 40, 200), (x_start, y_start, section_width, 80))
+    pygame.draw.rect(surface, (255, 215, 0), (x_start, y_start, section_width, 80), 2)
+    
+    # Health bar
+    health_bar_width = section_width - 40
+    pygame.draw.rect(surface, (100, 0, 0), (x_start + 20, y_start + 20, health_bar_width, 15))
+    pygame.draw.rect(surface, (0, 255, 0), (x_start + 20, y_start + 20, 
+                                           health_bar_width * (health / max_health), 15))
+    pygame.draw.rect(surface, (255, 255, 255), (x_start + 20, y_start + 20, health_bar_width, 15), 1)
+    
+    # Health text
+    health_text = small_font.render(f"HEALTH: {int(health)}/{max_health}", True, (255, 255, 255))
+    surface.blit(health_text, (x_start + 20, y_start + 5))
+    
+    # Armor level
+    armor_text = small_font.render(f"ARMOR: LVL {armor_level}", True, (200, 255, 200))
+    surface.blit(armor_text, (x_start + 20, y_start + 40))
+    
+    # SECTION 2: WEAPON & AMMO
+    section2_x = x_start + section_width + 10
+    pygame.draw.rect(surface, (30, 30, 40, 200), (section2_x, y_start, section_width, 80))
+    pygame.draw.rect(surface, (255, 215, 0), (section2_x, y_start, section_width, 80), 2)
+    
+    weapon_name = "Neon Blaster" if is_laser_weapon else "Firearm" if has_weapon else "None"
+    weapon_name_text = small_font.render(f"WEAPON: {weapon_name}", True, (255, 255, 255))
+    surface.blit(weapon_name_text, (section2_x + 20, y_start + 5))
+    
+    # Ammo display
+    if has_weapon:
+        ammo_text = font.render(f"{ammo}/{max_ammo}", True, (255, 255, 255))
+        surface.blit(ammo_text, (section2_x + 30, y_start + 25))
+        
+        # Ammo bar
+        ammo_bar_width = section_width - 60
+        pygame.draw.rect(surface, (50, 50, 70), (section2_x + 20, y_start + 50, ammo_bar_width, 8))
+        if max_ammo > 0:
+            ammo_fill = (ammo / max_ammo) * ammo_bar_width
+            ammo_color = (0, 200, 255) if is_laser_weapon else (255, 200, 0)
+            pygame.draw.rect(surface, ammo_color, (section2_x + 20, y_start + 50, ammo_fill, 8))
+        
+        # Reload indicator
+        if is_reloading:
+            reload_text = small_font.render("RELOADING...", True, (255, 50, 50))
+            surface.blit(reload_text, (section2_x + 20, y_start + 62))
+    else:
+        no_weapon_text = small_font.render("NO WEAPON", True, (255, 100, 100))
+        surface.blit(no_weapon_text, (section2_x + 30, y_start + 30))
+    
+    # SECTION 3: RESOURCES
+    section3_x = section2_x + section_width + 10
+    pygame.draw.rect(surface, (30, 30, 40, 200), (section3_x, y_start, section_width, 80))
+    pygame.draw.rect(surface, (255, 215, 0), (section3_x, y_start, section_width, 80), 2)
+    
+    # Gold
+    gold_icon = load_item_image("gold")
+    if gold_icon:
+        gold_icon = pygame.transform.scale(gold_icon, (20, 20))
+        surface.blit(gold_icon, (section3_x + 15, y_start + 15))
+    
+    gold_text = small_font.render(f"  {inventory['Gold']}", True, (255, 215, 0))
+    surface.blit(gold_text, (section3_x + 40, y_start + 17))
+    
+    # Keys
+    key_icon = load_item_image("key")
+    if key_icon:
+        key_icon = pygame.transform.scale(key_icon, (20, 20))
+        surface.blit(key_icon, (section3_x + 15, y_start + 40))
+    
+    key_text = small_font.render(f"  {inventory['Keys']}", True, (220, 180, 80))
+    surface.blit(key_text, (section3_x + 40, y_start + 42))
+    
+    # Time Shards
+    if inventory['Time Shards'] > 0:
+        shard_icon = load_item_image("timeshard")
+        if shard_icon:
+            shard_icon = pygame.transform.scale(shard_icon, (20, 20))
+            surface.blit(shard_icon, (section3_x + 15, y_start + 60))
+        
+        shard_text = small_font.render(f"  {inventory['Time Shards']}", True, (150, 150, 255))
+        surface.blit(shard_text, (section3_x + 40, y_start + 62))
+    
+    # SECTION 4: CONSUMABLES
+    section4_x = section3_x + section_width + 10
+    pygame.draw.rect(surface, (30, 30, 40, 200), (section4_x, y_start, section_width, 80))
+    pygame.draw.rect(surface, (255, 215, 0), (section4_x, y_start, section_width, 80), 2)
+    
+    # Potions
+    potion_icon = load_item_image("potion")
+    if potion_icon:
+        potion_icon = pygame.transform.scale(potion_icon, (20, 20))
+        surface.blit(potion_icon, (section4_x + 15, y_start + 15))
+    
+    potion_text = small_font.render(f"  {inventory['Health Potions']}", True, (255, 50, 50))
+    surface.blit(potion_text, (section4_x + 40, y_start + 17))
+    
+    # Herbs
+    herb_icon = load_item_image("herb")
+    if herb_icon:
+        herb_icon = pygame.transform.scale(herb_icon, (20, 20))
+        surface.blit(herb_icon, (section4_x + 15, y_start + 40))
+    
+    herb_text = small_font.render(f"  {inventory['Herbs']}", True, (50, 255, 50))
+    surface.blit(herb_text, (section4_x + 40, y_start + 42))
+    
+    # Quick-use hint
+    if inventory['Health Potions'] > 0 and health < max_health:
+        hint_text = small_font.render("Press H to use", True, (200, 200, 200))
+        surface.blit(hint_text, (section4_x + 15, y_start + 60))
+
+
+def draw_quick_inventory(surface):
+    """Draw a quick-access inventory bar at the bottom."""
+    if not hud_visible:  # Only show when inventory is toggled
+        return
+    
+    bar_height = 100
+    bar_y = ROOM_HEIGHT - bar_height
+    
+    # Background
+    bar_bg = pygame.Surface((ROOM_WIDTH, bar_height), pygame.SRCALPHA)
+    bar_bg.fill((0, 0, 0, 220))
+    surface.blit(bar_bg, (0, bar_y))
+    
+    # Top border
+    pygame.draw.line(surface, (255, 215, 0), (0, bar_y), (ROOM_WIDTH, bar_y), 2)
+    
+    # Section headers
+    headers = ["RESOURCES", "QUEST ITEMS", "UPGRADES", "CONSUMABLES"]
+    item_width = ROOM_WIDTH // 4
+    item_height = 80
+    
+    for i, header in enumerate(headers):
+        x = i * item_width
+        header_text = small_font.render(header, True, (255, 215, 0))
+        surface.blit(header_text, (x + 10, bar_y + 5))
+        
+        # Content box
+        content_box = pygame.Rect(x + 5, bar_y + 25, item_width - 10, item_height - 30)
+        pygame.draw.rect(surface, (40, 40, 60), content_box)
+        pygame.draw.rect(surface, (100, 100, 140), content_box, 1)
+        
+        # Fill with appropriate items
+        y_offset = bar_y + 30
+        if i == 0:  # Resources
+            resource_text = small_font.render(f"Gold: {inventory['Gold']}", True, (255, 215, 0))
+            surface.blit(resource_text, (x + 15, y_offset))
+        elif i == 1:  # Quest Items
+            if inventory['Keys'] > 0:
+                key_text = small_font.render(f"Keys: {inventory['Keys']}", True, (220, 180, 80))
+                surface.blit(key_text, (x + 15, y_offset))
+            if inventory['Time Shards'] > 0:
+                shard_text = small_font.render(f"Shards: {inventory['Time Shards']}", True, (150, 150, 255))
+                surface.blit(shard_text, (x + 15, y_offset + 20))
+        elif i == 2:  # Upgrades
+            upgrade_text = small_font.render(f"Weapon Lvl: {weapon_level}", True, (200, 200, 255))
+            surface.blit(upgrade_text, (x + 15, y_offset))
+            armor_text = small_font.render(f"Armor Lvl: {armor_level}", True, (200, 255, 200))
+            surface.blit(armor_text, (x + 15, y_offset + 20))
+        elif i == 3:  # Consumables
+            if inventory['Health Potions'] > 0:
+                potion_text = small_font.render(f"Potions: {inventory['Health Potions']}", True, (255, 50, 50))
+                surface.blit(potion_text, (x + 15, y_offset))
+            if inventory['Herbs'] > 0:
+                herb_text = small_font.render(f"Herbs: {inventory['Herbs']}", True, (50, 255, 50))
+                surface.blit(herb_text, (x + 15, y_offset + 20))
+
+# ===== ENHANCED WEAPON HUD =====
+def draw_enhanced_weapon_hud(surface):
+    """Draw an enhanced weapon HUD with more detailed information."""
+    if not has_weapon:
+        return
+    
+    
+    panel_width = 180
+    panel_height = 100
+    panel_x = 10  
+    panel_y = 10  
+    
+    # Panel background
+    panel_bg = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
+    panel_bg.fill((0, 0, 0, 180))
+    pygame.draw.rect(panel_bg, (255, 215, 0), (0, 0, panel_width, panel_height), 2)
+    surface.blit(panel_bg, (panel_x, panel_y))
+    
+    # Weapon icon/type
+    weapon_color = (0, 200, 255) if is_laser_weapon else (255, 200, 0)
+    weapon_type_text = font.render("LASER" if is_laser_weapon else "FIREARM", True, weapon_color)
+    surface.blit(weapon_type_text, (panel_x + 10, panel_y + 10))
+    
+    # Ammo display with visual bar
+    ammo_text = font.render(f"{ammo} / {max_ammo}", True, (255, 255, 255))
+    surface.blit(ammo_text, (panel_x + 10, panel_y + 40))
+    
+    # Ammo bar
+    ammo_bar_width = 160
+    ammo_bar_height = 10
+    ammo_bar_x = panel_x + 10
+    ammo_bar_y = panel_y + 70
+    
+    # Background bar
+    pygame.draw.rect(surface, (50, 50, 70), (ammo_bar_x, ammo_bar_y, ammo_bar_width, ammo_bar_height))
+    
+    # Filled portion
+    if max_ammo > 0:
+        ammo_percent = ammo / max_ammo
+        ammo_fill_width = ammo_bar_width * ammo_percent
+        
+        if ammo_percent > 0.5:
+            fill_color = (0, 200, 0)  # Green for plenty
+        elif ammo_percent > 0.25:
+            fill_color = (255, 200, 0)  # Yellow for medium
+        else:
+            fill_color = (255, 50, 0)  # Red for low
+            
+        if is_laser_weapon:
+            fill_color = (0, 200, 255)  # Blue for laser
+        
+        pygame.draw.rect(surface, fill_color, (ammo_bar_x, ammo_bar_y, ammo_fill_width, ammo_bar_height))
+    
+    # Border
+    pygame.draw.rect(surface, (200, 200, 200), (ammo_bar_x, ammo_bar_y, ammo_bar_width, ammo_bar_height), 1)
+    
+    # Reload indicator
+    if is_reloading:
+        reload_text = small_font.render("RELOADING...", True, (255, 100, 100))
+        surface.blit(reload_text, (panel_x + 10, panel_y + 85))
+        
+        # Reload progress bar
+        reload_progress = 1.0 - (reload_time / 2.0)
+        reload_bar_width = ammo_bar_width * reload_progress
+        pygame.draw.rect(surface, (255, 50, 50), (ammo_bar_x, ammo_bar_y, reload_bar_width, 3))
+
 def enter_level_2():
     """Warp player to Level-2 Rooftop Hideout, reset game state for level 2."""
     global current_room, player, health, max_health, weapon_level, armor_level
@@ -923,7 +1177,7 @@ def enter_level_2():
     global boss_defeated, boss_drop_collected
     
     current_room[0] = 1          
-    current_room[1] = 1          
+    current_room[1] = 2          
     current_room[2] = 2          
     player.center = (ROOM_WIDTH // 2, ROOM_HEIGHT // 2)
    
@@ -2979,9 +3233,12 @@ while running:
         draw_message(screen)
         draw_dialogue(screen)
         draw_blacksmith_shop(screen)
-        draw_weapon_hud(screen)
         draw_cyber_shop(screen)
-        
+        draw_enhanced_weapon_hud(screen)  
+
+
+        if hud_visible:
+            draw_quick_inventory(screen)
         if DEV_MODE:
             coord_surf = small_font.render(f"{player.x:.0f}, {player.y:.0f}", True, (255, 255, 0))
             screen.blit(coord_surf, (10, ROOM_HEIGHT - 20))
