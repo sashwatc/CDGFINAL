@@ -20,6 +20,8 @@ GRID_HEIGHT = 3
 LEVELS = 3
 DEV_MODE = True # this is for debugging and adding invisible barriers so that we can see where they are
 DEV_SKIP_TO_LEVEL_2 = True  
+# Level 2 spawn point (consistent spawn when entering Level 2)
+LEVEL2_SPAWN = (ROOM_WIDTH // 2, ROOM_HEIGHT // 2)
 # ------------ LEVEL 2 (CYBERPUNK) ------------
 LEVEL_2_NAME = "The Neon City (Cyberpunk Future)"
 LEVEL_2_BG_MAP = {               # (row,col) : filename  (no extension)
@@ -360,6 +362,8 @@ def load_item_image(item_type):
         return load_image(f"items/{item_type}.png", 50, 50)  
     elif item_type == "keycard":
         return load_image(f"items/keycard.png", 45, 45)
+    elif item_type == "credit":
+        return load_image(f"items/credit.png", 36, 36)
     return load_image(f"items/{item_type}.png", 25, 25)
 
 def get_npc_size(npc_type):
@@ -373,7 +377,7 @@ def get_npc_size(npc_type):
     elif npc_type == "knight":
         return (50, 70) 
     elif npc_type == "timebandit":
-        return (45, 65)
+        return (70, 100)
     elif npc_type == "boss2":
         return (110, 130)
     return (35, 55)
@@ -402,7 +406,8 @@ weapon_level = 1
 armor_level = 0
 GOBLIN_CONTACT_DAMAGE = 10
 goblin_contact_cooldown = 0.0  
-player_speed_boost_timer = 0.0  
+player_speed_boost_timer = 0.0
+player_electrified_timer = 0.0  # Electrify status effect (slows player)
 
 #  inventory system
 inventory = {
@@ -433,6 +438,7 @@ collected_herbs = set()
 collected_potions = set()
 collected_keys = set()
 collected_timeshards = set()
+collected_credits = set()
 
 #  safe system
 safe_code = "4231" 
@@ -465,6 +471,35 @@ def start_cipher():
     cipher_visible = True
     set_message("Data Hub activated: decode the message", (0, 200, 255), 3.0)
 
+def handle_cipher_key(event):
+    """Handle key input while cipher overlay is active."""
+    global cipher_input, cipher_visible
+    # BACKSPACE
+    if event.key == pygame.K_BACKSPACE:
+        cipher_input = cipher_input[:-1]
+        return
+    # ESC closes
+    if event.key == pygame.K_ESCAPE:
+        cipher_visible = False
+        return
+    # Enter to submit
+    if event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
+        if cipher_input.strip().lower() == cipher_plain.lower():
+            cipher_visible = False
+            # spawn a keycard pickup in this room center
+            room_key = tuple(current_room)
+            room_info = room_data.get(room_key, {})
+            room_info.setdefault("items", []).append({"type": "keycard", "x": ROOM_WIDTH//2 - 20, "y": ROOM_HEIGHT//2 - 20, "id": f"keycard_datahub_{room_key[1]}_{room_key[2]}"})
+            set_message("Correct! A Keycard has been spawned in the Data Hub.", (0, 255, 0), 3.0)
+        else:
+            set_message("Incorrect. Try again.", (255, 0, 0), 1.5)
+            cipher_input = ""
+        return
+
+    # Accept letters and spaces
+    if len(event.unicode) == 1 and (event.unicode.isalpha() or event.unicode.isspace()):
+        cipher_input += event.unicode
+
 # maze system
 maze_visible = False
 maze_completed = False
@@ -496,7 +531,7 @@ boss_attack_cooldown = 0
 boss_axe = None
 boss_axe_angle = 0
 boss_axe_swinging = False
-boss_axe_damage = 40  
+boss_axe_damage = 80  # boss does 80 damage per hit
 boss_defeated = False
 boss_drop_collected = False
 boss_phase = 1  
@@ -1246,10 +1281,13 @@ def enter_level_2():
     global collected_gold, collected_herbs, collected_potions, collected_keys, collected_timeshards
     global boss_defeated, boss_drop_collected
     
-    current_room[0] = 1          
-    current_room[1] = 2          
-    current_room[2] = 2          
-    player.center = (ROOM_WIDTH // 2, ROOM_HEIGHT // 2)
+    # move player to Factory Exterior in Level 2
+    current_room[0] = 1
+    current_room[1] = 1
+    current_room[2] = 2
+    # place player at the Factory Exterior spawn point
+    # use a moderately right-of-center spawn so player faces the area
+    player.center = (ROOM_WIDTH // 2 + 150, ROOM_HEIGHT // 2)
    
     health = 100
     max_health = 100
@@ -1312,7 +1350,8 @@ def update_thrown_axes(dt_sec):
         
         axe_rect = pygame.Rect(axe["x"] - 20, axe["y"] - 10, 40, 20)
         if player.colliderect(axe_rect):
-            damage = 40 - (armor_level * 3)  
+            # thrown axes deal up to boss_axe_damage (reduced by armor)
+            damage = boss_axe_damage - (armor_level * 3)
             health = max(0, health - damage)
             set_message(f"Thrown axe hit for {damage} damage!", (255, 0, 0), 1.5)
             axes_to_remove.append(i)
@@ -1438,35 +1477,140 @@ boss2_health = 0
 boss2_max_health = 0
 boss2_alive = False
 boss2_defeated = False
+boss2_phase = 1  # Phase 1: 300 HP, Phase 2: 450 HP (activated at 150 HP)
+boss2_phase1_hp = 300
+boss2_phase2_hp = 450
+boss2_laser_cooldown = 0.0
+boss2_laser_charge_index = 0  # 0-2 for three charges
+boss2_lasers = []  # List of active laser beams
+boss2_contact_cooldown = 0.0  # Cooldown between contact damage hits (3 seconds)
 
 def init_boss2():
     """Initialize the AI boss in the AI Control Room."""
-    global boss2, boss2_health, boss2_max_health, boss2_alive, boss2_defeated
-    boss2 = {"rect": pygame.Rect(350, 300, 110, 130), "alive": True}
-    boss2_max_health = max_health * 3
-    boss2_health = boss2_max_health
+    global boss2, boss2_health, boss2_max_health, boss2_alive, boss2_defeated, boss2_phase, boss2_laser_cooldown, boss2_laser_charge_index, boss2_lasers, boss2_contact_cooldown
+    # place boss2 below and to the right of the player's spawn when entering level 2
+    try:
+        px, py = player.centerx, player.centery
+    except Exception:
+        px, py = ROOM_WIDTH // 2, ROOM_HEIGHT // 2
+    offset_x, offset_y = 80, 80
+    bx = max(0, min(ROOM_WIDTH - 110, int(px + offset_x)))
+    by = max(0, min(ROOM_HEIGHT - 130, int(py + offset_y)))
+    boss2 = {"rect": pygame.Rect(bx, by, 110, 130), "alive": True}
+    boss2_phase = 1
+    boss2_max_health = boss2_phase1_hp + boss2_phase2_hp  # Total: 750 HP (300 phase 1, 450 phase 2)
+    boss2_health = boss2_phase1_hp  # Start with phase 1 HP
     boss2_alive = True
     boss2_defeated = False
+    boss2_laser_cooldown = 0.0
+    boss2_laser_charge_index = 0
+    boss2_lasers = []
+    boss2_contact_cooldown = 0.0
 
 def update_boss2(dt):
-    """Simple boss behavior: slowly chase player and damage on contact."""
-    global boss2_health, boss2_alive, health, boss2_defeated
+    """Boss2 behavior: Phase 1 chases player, Phase 2 (at 150 HP) charges and fires lasers."""
+    global boss2_health, boss2_alive, health, boss2_defeated, boss2_phase, boss2_laser_cooldown, boss2_laser_charge_index, boss2_lasers, boss2_contact_cooldown
     if not boss2 or not boss2.get("alive", False):
         return
+    
     dt_sec = dt / 1000.0
-    dx = player.centerx - boss2["rect"].centerx
-    dy = player.centery - boss2["rect"].centery
-    dist = math.hypot(dx, dy)
-    if dist > 0 and dist < 500:
-        step = 120 * dt_sec
-        boss2["rect"].x += (dx / dist) * step
-        boss2["rect"].y += (dy / dist) * step
-    # contact damage if close
-    if player.colliderect(boss2["rect"]):
-        health = max(0, health - 25)
+    boss2_contact_cooldown -= dt_sec
+    
+    # Check phase transition: enter phase 2 when health drops to 150 HP or below
+    if boss2_phase == 1 and boss2_health <= boss2_phase1_hp / 2:
+        boss2_phase = 2
+        set_message("Phase 2: Boss goes berserk!", (255, 100, 0), 2.0)
+    
+    # Phase 1: Simple chase (120 speed)
+    if boss2_phase == 1:
+        dx = player.centerx - boss2["rect"].centerx
+        dy = player.centery - boss2["rect"].centery
+        dist = math.hypot(dx, dy)
+        if dist > 0 and dist < 500:
+            step = 120 * dt_sec
+            boss2["rect"].x += (dx / dist) * step
+            boss2["rect"].y += (dy / dist) * step
+        # contact damage if close (every 3 seconds max)
+        if player.colliderect(boss2["rect"]) and boss2_contact_cooldown <= 0:
+            health = max(0, health - 15)  # Phase 1: 15 damage (can't one-shot)
+            player_electrified_timer = 3.0  # Electrified for 3 seconds
+            set_message("You are ELECTRIFIED!", (0, 200, 255), 2.0)
+            boss2_contact_cooldown = 3.0
+    
+    # Phase 2: Increased speed (180), charging and laser attacks
+    elif boss2_phase == 2:
+        dx = player.centerx - boss2["rect"].centerx
+        dy = player.centery - boss2["rect"].centery
+        dist = math.hypot(dx, dy)
+        if dist > 0 and dist < 500:
+            step = 180 * dt_sec  # 1.5x base speed
+            boss2["rect"].x += (dx / dist) * step
+            boss2["rect"].y += (dy / dist) * step
+        # contact damage if close: every 3 seconds max (was 20)
+        if player.colliderect(boss2["rect"]) and boss2_contact_cooldown <= 0:
+            health = max(0, health - 20)  # Phase 2: 20 damage (can't one-shot)
+            player_electrified_timer = 3.0  # Electrified for 3 seconds
+            set_message("You are ELECTRIFIED!", (0, 200, 255), 2.0)
+            boss2_contact_cooldown = 3.0
+        
+        # Laser charging and firing: 10 second cycle
+        boss2_laser_cooldown += dt_sec
+        
+        # Charge phase: 4 seconds (show charges at target locations)
+        if boss2_laser_cooldown < 4.0:
+            # Calculate charge locations once (cached in boss2)
+            if not boss2.get("charge_locations"):
+                # 1 at player, 2 random locations
+                boss2["charge_locations"] = [
+                    (player.centerx, player.centery),  # Charge 0: at player
+                    (random.randint(50, ROOM_WIDTH - 50), random.randint(50, ROOM_HEIGHT - 50)),  # Charge 1: random
+                    (random.randint(50, ROOM_WIDTH - 50), random.randint(50, ROOM_HEIGHT - 50))   # Charge 2: random
+                ]
+            boss2_laser_charge_index = 3  # All 3 charges showing
+        
+        # Fire phase: 1 second (show lasers at same locations, deal damage)
+        elif boss2_laser_cooldown < 5.0:
+            # Fire lasers at the charge locations
+            if not boss2.get("lasers_fired"):
+                charge_locs = boss2.get("charge_locations", [])
+                for i, (cx, cy) in enumerate(charge_locs):
+                    boss2_lasers.append({
+                        "x": cx,
+                        "y": cy,
+                        "lifetime": 1.0,  # Lasers visible for 1 second
+                        "type": "stationary"
+                    })
+                boss2["lasers_fired"] = True
+            boss2_laser_charge_index = 0  # Charges disappear, lasers show
+        
+        # Reset cycle after 5 seconds (4 charge + 1 laser)
+        if boss2_laser_cooldown >= 5.0:
+            boss2_laser_cooldown = 0.0
+            boss2_laser_charge_index = 0
+            boss2["charge_locations"] = None
+            boss2["lasers_fired"] = False
+    
+    # Update lasers: check collisions and remove after lifetime
+    lasers_to_remove = []
+    for i, laser in enumerate(boss2_lasers):
+        laser["lifetime"] -= dt_sec
+        
+        # Check if laser hits player (only during active phase)
+        if laser["lifetime"] > 0:
+            laser_rect = pygame.Rect(laser["x"] - 16, laser["y"] - 16, 32, 32)
+            if player.colliderect(laser_rect):
+                health = 0  # One-shot the player
+                set_message("Hit by laser! Game Over!", (255, 0, 0), 2.0)
+        
+        # Remove if lifetime expired
+        if laser["lifetime"] <= 0:
+            lasers_to_remove.append(i)
+    
+    for i in sorted(lasers_to_remove, reverse=True):
+        boss2_lasers.pop(i)
 
 def check_boss2_hit():
-    global boss2_health, bullets, boss2_alive, boss2_defeated
+    global boss2_health, bullets, boss2_alive, boss2_defeated, boss2_phase
     if not boss2 or not boss2.get("alive", False):
         return
     bullets_to_remove = []
@@ -1490,10 +1634,33 @@ def check_boss2_hit():
         bullets.pop(i)
 
 def draw_boss2(surface):
+    global boss2_phase, boss2_laser_charge_index, boss2_lasers
     if not boss2 or not boss2.get("alive", False):
         return
     img = load_npc_image("boss2")
     surface.blit(img, (boss2["rect"].x, boss2["rect"].y))
+    
+    # Draw charge indicators in phase 2 (charge.png at target locations)
+    if boss2_phase == 2 and boss2_laser_charge_index == 3:
+        charge_locs = boss2.get("charge_locations", [])
+        for cx, cy in charge_locs:
+            try:
+                charge_img = load_image("objects/charge.png", 64, 64)
+                surface.blit(charge_img, (cx - 32, cy - 32))
+            except:
+                # Fallback: yellow circle if charge.png not found
+                pygame.draw.circle(surface, (255, 255, 0), (int(cx), int(cy)), 16)
+    
+    # Draw lasers as blue dots (like bullet coins)
+    for laser in boss2_lasers:
+        if laser["lifetime"] > 0:
+            # Draw blue laser dot similar to bullet coins
+            color_main = (0, 150, 255)
+            color_inner = (100, 200, 255)
+            pygame.draw.circle(surface, color_main, (int(laser["x"]), int(laser["y"])), 12)
+            pygame.draw.circle(surface, color_inner, (int(laser["x"]), int(laser["y"])), 9)
+            pygame.draw.circle(surface, (50, 100, 200), (int(laser["x"]), int(laser["y"])), 6)
+    
     # health bar
     health_width = 250
     health_x = ROOM_WIDTH // 2 - health_width // 2
@@ -1501,6 +1668,11 @@ def draw_boss2(surface):
     pygame.draw.rect(surface, (100, 0, 0), (health_x, health_y, health_width, 20))
     pygame.draw.rect(surface, (255, 0, 0), (health_x, health_y, health_width * (boss2_health / boss2_max_health), 20))
     pygame.draw.rect(surface, (255, 255, 255), (health_x, health_y, health_width, 20), 2)
+    
+    # Phase indicator
+    phase_text = f"Phase {boss2_phase}"
+    phase_surf = small_font.render(phase_text, True, (255, 255, 0) if boss2_phase == 2 else (255, 255, 255))
+    surface.blit(phase_surf, (health_x + health_width + 10, health_y))
 
 
 #  weapon and shooting system
@@ -2072,24 +2244,32 @@ def draw_timebandits(surface, room_key):
         surface.blit(img, (tb["x"], tb["y"]))
 
 def draw_item(surface, x, y, item_type, item_id):
-    """Draw items using images."""
+    """Draw items using images or procedural graphics."""
     
     level, row, col = current_room
     collected_set = get_collected_set(item_type)
     if (level, row, col, x, y) in collected_set:
         return None
     
-    img = load_item_image(item_type)
-    surface.blit(img, (x, y))
-    
-    
-    if item_type in ["key", "gold", "herb"]:
-        rect = pygame.Rect(x, y, 45, 45)  
-    elif item_type == "timeshard":
-        rect = pygame.Rect(x, y, 50, 50)  
+    # Credits are drawn as coins (like bullet coins) instead of using image file
+    if item_type == "credit":
+        # Draw yellow/gold coin (matches bullet appearance)
+        color_main = (255, 215, 0)
+        color_inner = (255, 255, 100)
+        pygame.draw.circle(surface, color_main, (int(x) + 10, int(y) + 10), 10)
+        pygame.draw.circle(surface, color_inner, (int(x) + 10, int(y) + 10), 8)
+        pygame.draw.circle(surface, (200, 180, 0), (int(x) + 10, int(y) + 10), 6)
+        rect = pygame.Rect(x, y, 20, 20)
     else:
-        rect = pygame.Rect(x, y, 25, 25)
-    
+        img = load_item_image(item_type)
+        surface.blit(img, (x, y))
+        
+        if item_type in ["key", "gold", "herb"]:
+            rect = pygame.Rect(x, y, 45, 45)  
+        elif item_type == "timeshard":
+            rect = pygame.Rect(x, y, 50, 50)  
+        else:
+            rect = pygame.Rect(x, y, 25, 25)
 
     if item_type == "gold":
         gold_items.append((rect, x, y))
@@ -2117,6 +2297,8 @@ def get_collected_set(item_type):
         return collected_keys
     elif item_type == "timeshard":
         return collected_timeshards
+    elif item_type == "credit":
+        return collected_credits
     return set()
 
 def draw_room(surface, level, row, col):
@@ -2697,45 +2879,49 @@ def handle_maze_input():
         return True
     return False
 
-    def draw_cipher_overlay(surface):
-        """Draw the Data Hub cipher overlay when active."""
-        if not cipher_visible:
-            return
+def draw_cipher_overlay(surface):
+    """Draw the Data Hub cipher overlay when active."""
+    if not cipher_visible:
+        return
+    
+    # Ensure cipher_text_shifted is defined
+    if not cipher_text_shifted:
+        return
 
-        overlay = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 220))
-        surface.blit(overlay, (0, 0))
+    overlay = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 220))
+    surface.blit(overlay, (0, 0))
 
-        box = pygame.Rect(150, 180, 500, 300)
-        pygame.draw.rect(surface, (10, 20, 30), box)
-        pygame.draw.rect(surface, (0, 200, 255), box, 3)
+    box = pygame.Rect(150, 180, 500, 300)
+    pygame.draw.rect(surface, (10, 20, 30), box)
+    pygame.draw.rect(surface, (0, 200, 255), box, 3)
 
-        title = title_font.render("DATA HUB", True, (0, 255, 255))
-        surface.blit(title, (ROOM_WIDTH//2 - title.get_width()//2, box.y + 10))
+    title = title_font.render("DATA HUB", True, (0, 255, 255))
+    surface.blit(title, (ROOM_WIDTH//2 - title.get_width()//2, box.y + 10))
 
-        shifted_text = small_font.render(f"Cipher: {cipher_text_shifted}", True, (200, 200, 255))
-        surface.blit(shifted_text, (box.x + 20, box.y + 80))
+    shifted_text = small_font.render(f"Cipher: {cipher_text_shifted}", True, (200, 200, 255))
+    surface.blit(shifted_text, (box.x + 20, box.y + 80))
 
-        prompt = small_font.render("Enter decoded phrase and press ENTER:", True, (200, 200, 200))
-        surface.blit(prompt, (box.x + 20, box.y + 120))
+    prompt = small_font.render("Enter decoded phrase and press ENTER:", True, (200, 200, 200))
+    surface.blit(prompt, (box.x + 20, box.y + 120))
 
-        input_box = pygame.Rect(box.x + 20, box.y + 150, box.width - 40, 40)
-        pygame.draw.rect(surface, (30, 30, 50), input_box)
-        pygame.draw.rect(surface, (100, 100, 150), input_box, 2)
+    input_box = pygame.Rect(box.x + 20, box.y + 150, box.width - 40, 40)
+    pygame.draw.rect(surface, (30, 30, 50), input_box)
+    pygame.draw.rect(surface, (100, 100, 150), input_box, 2)
 
-        input_text_surf = font.render(cipher_input, True, (255, 255, 255))
-        surface.blit(input_text_surf, (input_box.x + 10, input_box.y + 6))
+    input_text_surf = font.render(cipher_input, True, (255, 255, 255))
+    surface.blit(input_text_surf, (input_box.x + 10, input_box.y + 6))
 
-        hint = small_font.render("Hint: It's a simple Caesar shift", True, (150, 150, 200))
-        surface.blit(hint, (box.x + 20, box.y + 210))
+    hint = small_font.render("Hint: It's a simple Caesar shift", True, (150, 150, 200))
+    surface.blit(hint, (box.x + 20, box.y + 210))
 
-        close_rect = pygame.Rect(box.centerx - 50, box.bottom - 50, 100, 36)
-        pygame.draw.rect(surface, (100, 0, 100), close_rect)
-        pygame.draw.rect(surface, (255, 0, 255), close_rect, 2)
-        close_text = small_font.render("CLOSE", True, (255, 255, 255))
-        surface.blit(close_text, (close_rect.centerx - close_text.get_width()//2, close_rect.centery - close_text.get_height()//2))
+    close_rect = pygame.Rect(box.centerx - 50, box.bottom - 50, 100, 36)
+    pygame.draw.rect(surface, (100, 0, 100), close_rect)
+    pygame.draw.rect(surface, (255, 0, 255), close_rect, 2)
+    close_text = small_font.render("CLOSE", True, (255, 255, 255))
+    surface.blit(close_text, (close_rect.centerx - close_text.get_width()//2, close_rect.centery - close_text.get_height()//2))
 
-        return close_rect
+    return close_rect
 
 # ===== NEW UI FUNCTIONS =====
 def create_button(text, x, y, width, height, hover=False):
@@ -2993,7 +3179,7 @@ def update_timebandits(dt):
         return
     if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible:
         return
-    global goblin_contact_cooldown, health
+    global goblin_contact_cooldown, health, player_electrified_timer
 
     dt_sec = dt / 1000.0
 
@@ -3032,8 +3218,9 @@ def update_timebandits(dt):
         tb_rect = pygame.Rect(tb["x"], tb["y"], w, h)
         if tb_rect.colliderect(player) and goblin_contact_cooldown <= 0:
             health = max(0, health - GOBLIN_CONTACT_DAMAGE)
+            player_electrified_timer = 3.0  # Electrified for 3 seconds
             goblin_contact_cooldown = 0.75
-            set_message(f"-{GOBLIN_CONTACT_DAMAGE} HP (Time Bandit)", (255, 80, 80), 1.0)
+            set_message("You are ELECTRIFIED!", (0, 200, 255), 2.0)
 
 def pickup_items():
     """Handle item collection."""
@@ -3068,35 +3255,59 @@ def pickup_items():
     # Handle key and time shard pickup
     room_key = tuple(current_room)
     room_info = room_data.get(room_key, {})
-    for item in room_info.get("items", []):
-        if item["type"] in ["key", "timeshard", "keycard"]:
-            # Create appropriate sized collision rectangle
-            if item["type"] == "key":
-                item_rect = pygame.Rect(item["x"], item["y"], 45, 45)
-            elif item["type"] == "timeshard":
-                item_rect = pygame.Rect(item["x"], item["y"], 50, 50)
-            elif item["type"] == "keycard":
-                item_rect = pygame.Rect(item["x"], item["y"], 45, 45)
-            else:
-                item_rect = pygame.Rect(item["x"], item["y"], 25, 25)
-                
-            if player.colliderect(item_rect.inflate(20, 20)):
-                key_tuple = (room_key[0], room_key[1], room_key[2], item["x"], item["y"])
-                if item["type"] == "key" and key_tuple not in collected_keys:
-                    inventory["Keys"] += 1
-                    collected_keys.add(key_tuple)
-                    set_message("+1 Key", (255, 215, 0), 1.5)
-                    break
-                elif item["type"] == "keycard" and key_tuple not in collected_keys:
-                    inventory["Keys"] += 1
-                    collected_keys.add(key_tuple)
-                    set_message("+1 Keycard", (255, 215, 0), 1.5)
-                    break
-                elif item["type"] == "timeshard" and key_tuple not in collected_timeshards:
-                    inventory["Time Shards"] += 1
-                    collected_timeshards.add(key_tuple)
-                    set_message("+1 Time Shard!", (150, 150, 255), 2.0)
-                    break
+    for item in list(room_info.get("items", [])):
+        itype = item.get("type")
+        # create appropriate rect sizes
+        if itype == "key":
+            item_rect = pygame.Rect(item["x"], item["y"], 45, 45)
+        elif itype == "timeshard":
+            item_rect = pygame.Rect(item["x"], item["y"], 50, 50)
+        elif itype == "keycard":
+            item_rect = pygame.Rect(item["x"], item["y"], 45, 45)
+        elif itype == "credit":
+            item_rect = pygame.Rect(item["x"], item["y"], 20, 20)
+        else:
+            item_rect = pygame.Rect(item.get("x", 0), item.get("y", 0), 25, 25)
+
+        if player.colliderect(item_rect.inflate(20, 20)):
+            key_tuple = (room_key[0], room_key[1], room_key[2], item["x"], item["y"])
+            # Key pickup behaves as before
+            if itype == "key" and key_tuple not in collected_keys:
+                inventory["Keys"] += 1
+                collected_keys.add(key_tuple)
+                set_message("+1 Key", (255, 215, 0), 1.5)
+                break
+
+            # Keycard triggers credit spawn and disappears
+            elif itype == "keycard" and key_tuple not in collected_keys:
+                collected_keys.add(key_tuple)
+                # Remove the keycard from the room
+                room_info["items"].remove(item)
+                # Spawn credits across all Level 2 rooms
+                level2_rooms = [(1, 0, 0), (1, 0, 1), (1, 0, 2), (1, 1, 0), (1, 1, 1), (1, 1, 2), (1, 2, 0), (1, 2, 1), (1, 2, 2)]
+                spawn_count_per_room = 4
+                for level2_room in level2_rooms:
+                    room_info_level2 = room_data.get(level2_room, {})
+                    for i in range(spawn_count_per_room):
+                        cx = random.randint(50, ROOM_WIDTH - 50)
+                        cy = random.randint(50, ROOM_HEIGHT - 50)
+                        cid = f"credit_{level2_room[1]}_{level2_room[2]}_{random.randint(1000,9999)}_{i}"
+                        room_info_level2.setdefault("items", []).append({"type": "credit", "x": cx, "y": cy, "id": cid})
+                set_message("Keycard consumed: Credits scattered across Level 2!", (0, 200, 255), 3.0)
+                break
+
+            # Credit pickup -> +25 credits (Gold)
+            elif itype == "credit" and key_tuple not in collected_credits:
+                inventory["Gold"] += 25
+                collected_credits.add(key_tuple)
+                set_message("+25 Credits", (255, 215, 0), 1.5)
+                break
+
+            elif itype == "timeshard" and key_tuple not in collected_timeshards:
+                inventory["Time Shards"] += 1
+                collected_timeshards.add(key_tuple)
+                set_message("+1 Time Shard!", (150, 150, 255), 2.0)
+                break
 
 def set_message(text, color, duration):
     """Helper to queue on-screen messages safely."""
@@ -3207,8 +3418,12 @@ def handle_interaction():
                     need = 2 - inventory["Keys"]
                     set_message(f"You need {need} more key(s) to activate the portal!", (255, 200, 0), 2.0)
             elif obj_type == "datahub" and room_key == (1, 0, 2):
-                # Start cipher puzzle
-                start_cipher()
+                # Start cipher puzzle (wrapped to avoid crashes)
+                try:
+                    start_cipher()
+                except Exception as e:
+                    set_message("Data Hub error: cannot start cipher.", (255, 0, 0), 3.0)
+                    print("start_cipher error:", e)
                 return
    
     if room_key == (1, 0, 1):  
@@ -3369,25 +3584,13 @@ while running:
                     handle_maze_input()
                 
                 elif cipher_visible:
-                    # Capture cipher input for Data Hub
-                    if event.key == pygame.K_BACKSPACE:
-                        cipher_input = cipher_input[:-1]
-                    elif event.key == pygame.K_ESCAPE:
+                    # Delegate cipher key handling to function (safer)
+                    try:
+                        handle_cipher_key(event)
+                    except Exception as e:
                         cipher_visible = False
-                    elif event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
-                        # submit
-                        if cipher_input.strip().lower() == cipher_plain.lower():
-                            cipher_visible = False
-                            # give keycard
-                            inventory["Keys"] += 1
-                            collected_keys.add((current_room[0], current_room[1], current_room[2], ROOM_WIDTH//2 - 20, ROOM_HEIGHT//2 - 20))
-                            set_message("Correct! You received a Keycard!", (0, 255, 0), 3.0)
-                        else:
-                            set_message("Incorrect. Try again.", (255, 0, 0), 1.5)
-                            cipher_input = ""
-                    else:
-                        if len(event.unicode) == 1 and (event.unicode.isalpha() or event.unicode.isspace()):
-                            cipher_input += event.unicode
+                        set_message("Data Hub input error.", (255, 0, 0), 2.0)
+                        print("handle_cipher_key error:", e)
                 
                 elif safe_visible:
                     # capture safe code input
@@ -3500,8 +3703,12 @@ while running:
         
        
         player_speed_boost_timer = max(0.0, player_speed_boost_timer - (dt / 1000.0))
+        player_electrified_timer = max(0.0, player_electrified_timer - (dt / 1000.0))
+        
         speed_bonus = 3 if player_speed_boost_timer > 0 else 0
-        dx, dy = mv_x * (player_speed + speed_bonus), mv_y * (player_speed + speed_bonus)
+        speed_penalty = 0.5 if player_electrified_timer > 0 else 1.0  # 50% speed reduction when electrified
+        
+        dx, dy = mv_x * (player_speed + speed_bonus) * speed_penalty, mv_y * (player_speed + speed_bonus) * speed_penalty
         
         # Update enemy movement before drawing the room
         update_goblins(dt)
@@ -3584,7 +3791,12 @@ while running:
             close_rect = draw_maze_puzzle(screen)
         
         if cipher_visible:
-            cipher_close = draw_cipher_overlay(screen)
+            try:
+                cipher_close = draw_cipher_overlay(screen)
+            except Exception as e:
+                cipher_visible = False
+                set_message("Error displaying Data Hub.", (255, 0, 0), 3.0)
+                print("draw_cipher_overlay error:", e)
         
        
         near_object = False
