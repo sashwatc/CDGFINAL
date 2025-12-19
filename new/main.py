@@ -698,6 +698,12 @@ race_timer = 0.0
 race_time_limit = 35.0
 race_offtrack_timer = 0.0
 race_car = {"x": 0.0, "y": 0.0, "w": 22, "h": 12, "speed": 220.0}
+RACE_TRACK_BG = "backgrounds/racetrack.png"
+# Edit these to match obstacles in the track image (x, y, w, h).
+RACE_BOUNDARY_BOXES = [
+    (190, 160, 40, 120),
+    (570, 520, 40, 120),
+]
 
 def _race_track_rects():
     outer = pygame.Rect(140, 120, 520, 560)
@@ -705,6 +711,9 @@ def _race_track_rects():
     start_line = pygame.Rect(ROOM_WIDTH // 2 - 70, outer.bottom - 24, 140, 12)
     checkpoint = pygame.Rect(ROOM_WIDTH // 2 - 70, outer.top + 12, 140, 12)
     return outer, inner, start_line, checkpoint
+
+def _race_boundary_rects():
+    return [pygame.Rect(x, y, w, h) for x, y, w, h in RACE_BOUNDARY_BOXES]
 
 def _reset_race_car():
     global race_car, race_checkpoint_hit
@@ -745,12 +754,16 @@ def update_race_minigame(dt, keys_pressed):
 
     car_rect = pygame.Rect(int(race_car["x"]), int(race_car["y"]), race_car["w"], race_car["h"])
     outer, inner, start_line, checkpoint = _race_track_rects()
+    for boundary in _race_boundary_rects():
+        if car_rect.colliderect(boundary):
+            race_visible = False
+            set_message("Crashed! Race failed.", (255, 120, 120), 2.0)
+            return
 
     if not outer.contains(car_rect) or inner.colliderect(car_rect):
-        _reset_race_car()
-        if race_offtrack_timer <= 0.0:
-            set_message("Stay on the track!", (255, 200, 120), 1.2)
-            race_offtrack_timer = 1.0
+        race_visible = False
+        set_message("Off the road! Race failed.", (255, 120, 120), 2.0)
+        return
 
     if race_offtrack_timer > 0.0:
         race_offtrack_timer = max(0.0, race_offtrack_timer - dt_sec)
@@ -765,15 +778,19 @@ def update_race_minigame(dt, keys_pressed):
 def draw_race_minigame(surface):
     if not race_visible:
         return
+    track_bg = load_image(RACE_TRACK_BG, ROOM_WIDTH, ROOM_HEIGHT)
+    surface.blit(track_bg, (0, 0))
     overlay = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 200))
+    overlay.fill((0, 0, 0, 40))
     surface.blit(overlay, (0, 0))
 
     outer, inner, start_line, checkpoint = _race_track_rects()
-    pygame.draw.rect(surface, (40, 40, 60), outer)
-    pygame.draw.rect(surface, (0, 0, 0), inner)
-    pygame.draw.rect(surface, (120, 120, 160), outer, 3)
-    pygame.draw.rect(surface, (60, 60, 80), inner, 2)
+    if DEV_MODE:
+        pygame.draw.rect(surface, (120, 120, 160), outer, 2)
+        pygame.draw.rect(surface, (60, 60, 80), inner, 2)
+        for boundary in _race_boundary_rects():
+            pygame.draw.rect(surface, (255, 80, 80), boundary, 2)
+
     pygame.draw.rect(surface, (255, 255, 255), start_line)
     pygame.draw.rect(surface, (120, 200, 255), checkpoint)
 
@@ -1403,7 +1420,8 @@ room_data = {
     "objects": [
         {"type": "invisible", "x": 0, "y": 40, "width": 230, "height": 350},
         {"type": "invisible", "x": 0, "y": 500, "width": 230, "height": 350},
-        {"type": "shop", "x": 500, "y": 400, "width": 100, "height": 100}
+        {"type": "shop", "x": 470, "y": 370, "width": 160, "height": 160},
+        {"type": "shop", "x": 570, "y": 140, "width": 160, "height": 160}
     ],
     "interactive": [],
     "npcs": [],
