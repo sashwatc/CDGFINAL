@@ -1005,18 +1005,29 @@ def deploy_enemies_from_drone(drone, count):
         state = {"waves": [], "wave_index": 0, "active": [], "respawn": 0.0, "key_given": False}
         timebandit_rooms[room_key] = state
 
-                                                              
-    for i in range(count):
+    # enforce a max cap in the factory exterior (room 1,1,2)
+    MAX_FACTORY_TIMEBANDITS = 6
+    if room_key == (1, 1, 2):
+        current_alive = sum(1 for tb in state.get("active", []) if tb.get("alive", True))
+        allowed = max(0, MAX_FACTORY_TIMEBANDITS - current_alive)
+        if allowed <= 0:
+            set_message("Factory swarms full — wait for some to be defeated.", (255, 200, 0), 1.5)
+            return
+        spawn_count = min(count, allowed)
+    else:
+        spawn_count = count
+
+    for i in range(spawn_count):
         rx = int(drone["x"] + drone["w"]/2 + random.randint(-60, 60))
         ry = int(drone["y"] + drone["h"]/2 + random.randint(-60, 60))
-                                                   
+
         tb = {"x": float(rx), "y": float(ry), "alive": True, "loot_given": False, "damage": TIMEBANDIT_BASE_DAMAGE}
-                                              
+
         default_w, default_h = get_npc_size("timebandit")
         tb["w"] = default_w
         tb["h"] = default_h
         state["active"].append(tb)
-    set_message(f"Drone detected you! +{count} Time Bandits deployed.", (255, 80, 160), 2.0)
+    set_message(f"Drone detected you! +{spawn_count} Time Bandits deployed.", (255, 80, 160), 2.0)
 
 
 def _init_timebandits():
