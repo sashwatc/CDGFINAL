@@ -473,7 +473,8 @@ inventory = {
     "Health Potions": 3,
     "Herbs": 0,
     "Keys": 0,
-    "Time Shards": 0
+    "Time Shards": 0,
+    "Keycards": 0
 }
                                               
 inventory.setdefault("Ammo Packs", 0)
@@ -764,6 +765,11 @@ npc_dialogues = {
         "Market Vendor: They use energy cells instead of traditional ammo.",
         "Market Vendor: The Neon Blaster is our best seller - 50 credits."
     ],
+    (1, 2, 1, "time_guide"): [
+        "Time Guide: Greetings, traveler of eras.",
+        "Time Guide: To open the gateway you must present 6 Keycards and 2 Time Shards.",
+        "Time Guide: Return when you have them and I can send you onward.",
+    ],
 }
 
              
@@ -831,26 +837,31 @@ def init_drones():
     drones.clear()
     for room_key, info in room_data.items():
         for obj in info.get("objects", []):
-            if obj.get("type") == "drone":
+            if obj.get("type") in ("drone", "drone_boss"):
+                is_boss = obj.get("type") == "drone_boss"
                 state = {
                     "room_key": tuple(room_key),
                     "x": float(obj.get("x", ROOM_WIDTH//2)),
                     "y": float(obj.get("y", ROOM_HEIGHT//2)),
-                    "w": obj.get("width", 48),
-                    "h": obj.get("height", 48),
+                    "w": obj.get("width", 120) if is_boss else obj.get("width", 48),
+                    "h": obj.get("height", 120) if is_boss else obj.get("height", 48),
                     "vx": random.uniform(-20, 20),
                     "vy": random.uniform(-20, 20),
-                    "scan_angle": math.radians(40),
-                    "scan_range": 220,
+                    "scan_angle": math.radians(60) if is_boss else math.radians(40),
+                    "scan_range": 300 if is_boss else 220,
                     "facing": random.random() * math.pi * 2,
                     "detect_count": 0,
                     "scan_timer": 0.0,
                     "detect_cooldown": 3.0,
                     "target": None,
-                    "max_speed": 80.0,
-                    "accel": 160.0,
-                    "turn_rate": math.radians(180),
+                    "max_speed": 60.0 if is_boss else 80.0,
+                    "accel": 200.0 if is_boss else 160.0,
+                    "turn_rate": math.radians(120) if is_boss else math.radians(180),
+                    "is_boss": is_boss,
+                    "loot_given": False,
                 }
+                if is_boss:
+                    state.update({"hp": 3500, "laser_damage": 50, "laser_cooldown": 0.0})
                 drones.append(state)
 
                                                                                      
@@ -958,10 +969,10 @@ def update_drones(dt):
                                                   
                 if d.get("detect_cooldown", 0.0) <= 0.0:
                     d["detect_count"] += 1
-                                                     
+                    # spawn 2-3 enemies per detection
                     spawn_count = random.randint(2, 3)
                     deploy_enemies_from_drone(d, spawn_count)
-                                                                 
+                    # set 1 second cooldown before next detection
                     d["detect_cooldown"] = 1.0
 
 def draw_drones(surface):
@@ -1059,12 +1070,8 @@ room_data = {
         "npcs": [
             {"id": "elder", "x": 400, "y": 600, "name": "Elder Rowan"},
         ],
-        "items": [
-            {"type": "gold", "x": 40, "y": 300, "id": "gold_0_0_0_1"},
-            {"type": "gold", "x": 450, "y": 40, "id": "gold_0_0_0_2"},
-        ]
+        "items": []
     },
-
     (0, 0, 1): {
         "name": "Blacksmith's Forge",
         "objects": [
@@ -1253,15 +1260,17 @@ room_data = {
                                  , "npcs": [],
                                      "items": []},
     (1, 2, 0): {"name": "Core Reactor Room", 
-                "objects": [],
+                                "objects": [{"type": "drone_boss", "x": 360, "y": 180, "width": 64, "height": 64}],
                  "interactive": []
                  , "npcs": [],
                    "items": []},
-    (1, 2, 1): {"name": "Time Gateway",   
-                "objects": [],
-                 "interactive": []
-                 , "npcs": [],
-                   "items": []},
+        (1, 2, 1): {"name": "Time Gateway",   
+                                "objects": [],
+                                 "interactive": [],
+                                 "npcs": [
+                                         {"id": "time_guide", "x": 360, "y": 320, "name": "Time Guide"}
+                                 ],
+                                     "items": []},
     (1, 2, 2): {"name": "AI Control Room",      
                 "objects": [{"type": "invisible", "x": 720, "y": 40, "width": 125, "height": 625},
                             {"type": "invisible", "x": 520, "y": 670, "width": 225, "height": 55},
@@ -1772,6 +1781,54 @@ def enter_level_2():
         tb = traceback.format_exc()
         print("Error entering level 2:\n", tb)
         set_message("Error entering level 2 (see console).", (255, 0, 0), 5.0)
+
+
+def enter_level_3():
+    """Warp player to Level-3 (placeholder) - basic setup for next level.
+    This preserves the player's gold and keycards but resets some level-appropriate state.
+    """
+    global current_room, player, health, max_health, weapon_level, armor_level
+    global has_weapon, ammo, max_ammo, inventory, quests
+    global collected_gold, collected_herbs, collected_potions, collected_keys, collected_timeshards
+    global boss_defeated, boss_drop_collected
+    try:
+        current_room[0] = 2
+        current_room[1] = 1
+        current_room[2] = 1
+        player.center = (ROOM_WIDTH // 2, ROOM_HEIGHT // 2)
+
+        # keep gold and keycards
+        keep_gold = inventory.get("Gold", 0)
+        keep_keycards = inventory.get("Keycards", 0)
+        keep_shards = inventory.get("Time Shards", 0)
+
+        inventory = {
+            "Gold": keep_gold,
+            "Keycards": keep_keycards,
+            "Time Shards": keep_shards,
+            "Health Potions": 1,
+            "Herbs": 0,
+            "Keys": 0
+        }
+
+        collected_gold.clear()
+        collected_herbs.clear()
+        collected_potions.clear()
+        collected_keys.clear()
+        collected_timeshards.clear()
+
+        boss_defeated = False
+        boss_drop_collected = False
+
+        quests.clear()
+        quests.update({
+            "explore_future": {"active": True, "complete": False, "description": "Explore the Future Level"}
+        })
+        set_message("Welcome to Level 3! (Placeholder)", (200, 180, 255), 5.0)
+    except Exception:
+        tb = traceback.format_exc()
+        print("Error entering level 3:\n", tb)
+        set_message("Error entering level 3 (see console).", (255, 0, 0), 5.0)
 def update_thrown_axes(dt_sec):
     """Update positions of thrown axes and check for collisions."""
     global boss_thrown_axes, health
@@ -2326,7 +2383,7 @@ def update_bullets(dt):
                         bullets_to_remove.append(i)
                     break
 
-                                                                                      
+            # If all waves finished and none active, spawn a keycard in this room once
             if not any(tb.get("alive", True) for tb in tb_state["active"]) and tb_state["wave_index"] >= len(tb_state["waves"]) and not tb_state.get("key_given"):
                 room_info = room_data.get(room_key, {})
                 items = room_info.get("items")
@@ -4106,15 +4163,21 @@ def pickup_items():
 
                                                               
             elif itype == "keycard" and key_tuple not in collected_keys:
-                collected_keys.add(key_tuple)
-                                                                   
                 try:
-                    room_info["items"].remove(item)
+                    collected_keys.add(key_tuple)
+                    # Remove the keycard from the room so it disappears
+                    try:
+                        room_info["items"].remove(item)
+                    except Exception:
+                        pass
+                    # Track keycard collection and reward the player
+                    inventory["Keycards"] = inventory.get("Keycards", 0) + 1
+                    inventory["Gold"] += 50
+                    set_message(f"+1 Keycard (Total: {inventory.get('Keycards',0)}) +50 Gold", (255, 215, 0), 2.5)
                 except Exception:
-                    pass
-                                                              
-                inventory["Gold"] += 50
-                set_message("+50 Gold (Keycard collected)", (255, 215, 0), 2.5)
+                    tb = traceback.format_exc()
+                    print("Error handling keycard pickup:\n", tb)
+                    set_message("Error picking up keycard (see console).", (255, 100, 100), 3.0)
                 break
 
                                                  
@@ -4183,7 +4246,7 @@ def handle_interaction():
                                 quests["defeat_goblin_king"]["active"] = True
                                 set_message("Knight Rescued!", (0, 255, 0), 2.0)
                     else:
-                                                        
+                        # Other NPCs use normal dialogue
                         dialogue_key = (room_key[0], room_key[1], room_key[2], npc["id"])
                         if dialogue_key in npc_dialogues:
                             current_dialogue = npc_dialogues[dialogue_key]
