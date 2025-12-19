@@ -680,7 +680,7 @@ room_data = {
         "objects": [
             {"type": "invisible", "x": 110, "y": 100, "width": 140, "height": 600},
             {"type": "invisible", "x": 570, "y": 100, "width": 140, "height": 600},
-            {"type": "invisible", "x": 290, "y": 100, "width": 240, "height": 170},
+            {"type": "invisible", "x": 310, "y": 100, "width": 200, "height": 170},
         ],
         "interactive": [],
         "npcs": [
