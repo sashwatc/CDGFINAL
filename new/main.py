@@ -659,6 +659,9 @@ npcs = []
 interactive_objects = []
 goblin_rooms = {}
 
+# dynamic NPC states (position, roaming target, talking flag)
+npc_states = {}
+
 GOBLIN_WAVES = {
     (0, 0, 2): [
         [(350, 350), (200, 420)],  
@@ -689,6 +692,11 @@ _init_goblin_rooms()
 TIMEBANDIT_WAVES = {
     # Neon Streets (Level 1, row 1, col 1)
     (1, 1, 1): [
+        [(220, 220), (520, 300)],
+        [(180, 420), (600, 200), (360, 520)],
+    ],
+    # Core Reactor Room (Level 1, row 2, col 0) - same wave patterns as Neon Streets
+    (1, 2, 0): [
         [(220, 220), (520, 300)],
         [(180, 420), (600, 200), (360, 520)],
     ],
@@ -874,7 +882,7 @@ room_data = {
                    {"type": "invisible", "x": 610,   "y": 300, "width": 400, "height": 100}], 
         "interactive": [], 
         "npcs": [
-            {"id": "cyber_guide", "x": 400, "y": 500, "name": "Cyber Guide"},
+            {"id": "cyber_guide", "x": 400, "y": 500, "name": "Cyber Guide", "roam_radius": 140, "speed": 40, "stop_distance": 160},
         ], 
         "items": []
     },
@@ -950,6 +958,36 @@ def _init_goblins():
         goblin_states[forest_key] = spawn
 
 _init_goblins()
+
+
+def _init_npc_states():
+    """Initialize dynamic npc state entries for every NPC in room_data.
+    Keys: "level_row_col_id_index" to uniquely identify duplicates.
+    """
+    npc_states.clear()
+    for room_key, info in room_data.items():
+        npcs_list = info.get("npcs", [])
+        for i, npc in enumerate(npcs_list):
+            key = f"{room_key[0]}_{room_key[1]}_{room_key[2]}_{npc.get('id')}_{i}"
+            # store base/home position and dynamic fields
+            state = {
+                "room_key": tuple(room_key),
+                "id": npc.get("id"),
+                "home_x": float(npc.get("x", 0)),
+                "home_y": float(npc.get("y", 0)),
+                "x": float(npc.get("x", 0)),
+                "y": float(npc.get("y", 0)),
+                "roam_radius": npc.get("roam_radius", 80),
+                "speed": npc.get("speed", 30),  # pixels per second
+                "target": None,
+                "idle_timer": random.uniform(0.5, 2.5),
+                "talking": False,
+                "stop_distance": npc.get("stop_distance", 120),
+            }
+            npc_states[key] = state
+
+
+_init_npc_states()
 
 # Seed moderate credits across Level 2 so they're always present (2 per room)
 def _seed_level2_credits():
@@ -2544,16 +2582,24 @@ def draw_room(surface, level, row, col):
         draw_object(inter["x"], inter["y"], inter["type"], surface, level, inter["width"], inter["height"])
 
     # draw friendly npcs while goblins and boss are handled elsewhere
-    for npc in room_info.get("npcs", []):
+    npcs_list = room_info.get("npcs", [])
+    for i, npc in enumerate(npcs_list):
         if npc.get("id") in ["goblin", "boss1"]:
-            continue  
-        
+            continue
+
+        # resolve dynamic state if present
+        key = f"{level}_{row}_{col}_{npc.get('id')}_{i}"
+        state = npc_states.get(key)
+
         # track if the knight has been rescued so we render the right state
         rescued = False
         if npc.get("id") == "knight":
             rescued = npc.get("rescued", False)
-        
-        draw_npc(surface, npc["x"], npc["y"], npc["id"], rescued)
+
+        if state:
+            draw_npc(surface, int(state["x"]), int(state["y"]), npc["id"], rescued)
+        else:
+            draw_npc(surface, npc["x"], npc["y"], npc["id"], rescued)
 
     # Draw enemies
     draw_goblins(surface, room_key)
@@ -3390,6 +3436,77 @@ def update_goblins(dt):
             set_message(f"-{GOBLIN_CONTACT_DAMAGE} HP (Goblin)", (255, 80, 80), 1.0)
 
 
+def update_npcs(dt):
+    """Update roaming for friendly NPCs in the current room.
+    NPCs continuously move around within their roam_radius at a slow speed.
+    They stop moving when the player is within `stop_distance` or when flagged as talking.
+    NPCs also avoid colliding with invisible barriers.
+    """
+    dt_sec = dt / 1000.0
+    room_key = tuple(current_room)
+    
+    # Get barriers from current room (invisible colliders)
+    room_info = room_data.get(room_key, {})
+    barriers = []
+    for obj in room_info.get("objects", []):
+        if obj.get("type") == "invisible":
+            barriers.append(pygame.Rect(obj["x"], obj["y"], obj["width"], obj["height"]))
+    
+    # iterate states for NPCs in this room
+    for key, state in npc_states.items():
+        if tuple(state.get("room_key")) != room_key:
+            continue
+
+        # if NPC is talking or player is near, halt movement
+        px, py = player.centerx, player.centery
+        dist_to_player = math.hypot(px - (state["x"] + 0), py - (state["y"] + 0))
+        if state.get("talking") or dist_to_player <= state.get("stop_distance", 120):
+            state["target"] = None
+            continue
+
+        # pick a new target when none present (continuously move)
+        if not state.get("target"):
+            angle = random.random() * math.pi * 2
+            r = random.uniform(0, state.get("roam_radius", 80))
+            tx = state["home_x"] + math.cos(angle) * r
+            ty = state["home_y"] + math.sin(angle) * r
+            # clamp to room bounds
+            tx = max(0, min(ROOM_WIDTH - 32, tx))
+            ty = max(0, min(ROOM_HEIGHT - 32, ty))
+            state["target"] = (tx, ty)
+        else:
+            tx, ty = state["target"]
+            dx = tx - state["x"]
+            dy = ty - state["y"]
+            d = math.hypot(dx, dy)
+            if d <= 2:
+                # reached target; pick a new one immediately
+                state["target"] = None
+            else:
+                speed = state.get("speed", 30)
+                step = speed * dt_sec
+                new_x = state["x"] + (dx / d) * min(step, d)
+                new_y = state["y"] + (dy / d) * min(step, d)
+                
+                # check collision with barriers
+                npc_size = get_npc_size(state["id"])
+                test_rect = pygame.Rect(int(new_x), int(new_y), npc_size[0], npc_size[1])
+                
+                # only move if no collision
+                collision = False
+                for barrier in barriers:
+                    if test_rect.colliderect(barrier):
+                        collision = True
+                        break
+                
+                if not collision:
+                    state["x"] = new_x
+                    state["y"] = new_y
+                else:
+                    # pick a new target to avoid barrier
+                    state["target"] = None
+
+
 def update_timebandits(dt):
     """Move Time Bandits toward the player in configured cyber rooms."""
     room_key = tuple(current_room)
@@ -3675,23 +3792,32 @@ def handle_interaction():
     # Check for NPCs
     for npc_rect in npcs:
         if player.colliderect(npc_rect.inflate(50, 50)):
-            for npc in room_data.get(room_key, {}).get("npcs", []):
+            for i, npc in enumerate(room_data.get(room_key, {}).get("npcs", [])):
+                # resolve the dynamic state first (if any)
+                key = f"{room_key[0]}_{room_key[1]}_{room_key[2]}_{npc.get('id')}_{i}"
+                state = npc_states.get(key)
                 npc_size = get_npc_size(npc["id"])
-                npc_rect_check = pygame.Rect(npc["x"], npc["y"], npc_size[0], npc_size[1])
+                if state:
+                    npc_rect_check = pygame.Rect(int(state["x"]), int(state["y"]), npc_size[0], npc_size[1])
+                else:
+                    npc_rect_check = pygame.Rect(npc["x"], npc["y"], npc_size[0], npc_size[1])
+
                 if npc_rect_check.colliderect(npc_rect):
-                   
+                    # mark NPC as talking so roaming stops
+                    if state is not None:
+                        state["talking"] = True
+
                     if npc["id"] == "knight":
                         if npc.get("rescued", False):
                             dialogue_key = (room_key[0], room_key[1], room_key[2], "knight_rescued")
                         else:
                             dialogue_key = (room_key[0], room_key[1], room_key[2], "knight")
-                        
+
                         if dialogue_key in npc_dialogues:
                             current_dialogue = npc_dialogues[dialogue_key]
                             dialogue_active = True
                             dialogue_index = 0
-                            
-                           
+
                             if npc.get("rescued", False) and not quests["rescue_knight"]["complete"]:
                                 quests["rescue_knight"]["complete"] = True
                                 quests["defeat_goblin_king"]["active"] = True
@@ -3703,7 +3829,7 @@ def handle_interaction():
                             current_dialogue = npc_dialogues[dialogue_key]
                             dialogue_active = True
                             dialogue_index = 0
-                            
+
                             # Quest completion for elder
                             if npc["id"] == "elder" and not quests["talk_to_elder"]["complete"]:
                                 quests["talk_to_elder"]["complete"] = True
@@ -3949,6 +4075,9 @@ while running:
                     dialogue_index += 1
                     if dialogue_index >= len(current_dialogue):
                         dialogue_active = False
+                        # clear talking flags for all NPCs when dialogue ends
+                        for s in npc_states.values():
+                            s["talking"] = False
                 
                 elif upgrade_shop_visible:
                     if event.key == pygame.K_ESCAPE:
@@ -4054,9 +4183,10 @@ while running:
         
         dx, dy = mv_x * (player_speed + speed_bonus) * speed_penalty, mv_y * (player_speed + speed_bonus) * speed_penalty
         
-        # Update enemy movement before drawing the room
+        # Update enemy movement and NPC roaming before drawing the room
         update_goblins(dt)
         update_timebandits(dt)
+        update_npcs(dt)
         
         # Update boss if in throne room
         if tuple(current_room) == (0, 2, 0) and boss and boss["alive"]:
