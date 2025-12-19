@@ -88,6 +88,10 @@ is_laser_weapon = False
 laser_cooldown = 0.0  
 LASER_COOLDOWN_TIME = 0.1  
 REGULAR_COOLDOWN_TIME = 0.2  
+# Track how many ammo packs have been bought per level (level 0 and level 1)
+ammo_packs_bought = {0: 0, 1: 0}
+# Maximum number of ammo packs allowed per level
+MAX_AMMO_PACKS = 5
 
 #  shop items
 blacksmith_items = {
@@ -469,8 +473,24 @@ inventory = {
     "Keys": 0,
     "Time Shards": 0
 }
+# Track ammo packs (count of consumable packs)
+inventory.setdefault("Ammo Packs", 0)
 # initial quests (may be updated when entering levels)
-quests = {}
+# Predefine common quest entries to avoid KeyError when updating status
+quests = {
+    "buy_weapon": {"active": False, "complete": False, "description": "Buy a basic firearm from the Blacksmith"},
+    "upgrade_sword": {"active": False, "complete": False, "description": "Upgrade your weapon at the Blacksmith"},
+    "buy_laser_weapon": {"active": False, "complete": False, "description": "Buy a Neon Blaster from the Neon Market"},
+    "upgrade_laser": {"active": False, "complete": False, "description": "Upgrade your laser weapon"},
+    "upgrade_energy_shield": {"active": False, "complete": False, "description": "Upgrade your energy shield in the Neon Market"},
+    "defeat_goblin_king": {"active": False, "complete": False, "description": "Defeat the Goblin King in the throne room"},
+    "find_shard_1": {"active": False, "complete": False, "description": "Find the first Time Shard"},
+    "rescue_knight": {"active": False, "complete": False, "description": "Rescue the knight trapped in the cage"},
+    "talk_to_elder": {"active": False, "complete": False, "description": "Speak with Elder Rowan in the village"},
+    "kill_time_bandits": {"active": False, "complete": False, "description": "Eliminate the Time Bandits in Neon Streets"},
+    "solve_drawbridge": {"active": False, "complete": False, "description": "Solve the drawbridge puzzle"},
+    "collect_herbs": {"active": False, "complete": False, "description": "Collect 3 herbs for the Herb Collector"}
+}
 #   collected items tracking
 collected_gold = set()
 collected_herbs = set()
@@ -1232,6 +1252,9 @@ def draw_inventory_hud(surface):
         
         shard_text = small_font.render(f"  {inventory['Time Shards']}", True, (150, 150, 255))
         surface.blit(shard_text, (section3_x + 40, y_start + 62))
+    # Ammo Packs
+    packs_text = small_font.render(f"Ammo Packs: {inventory.get('Ammo Packs', 0)}", True, (0, 200, 255))
+    surface.blit(packs_text, (section3_x + 80, y_start + 17))
     
     # SECTION 4: CONSUMABLES
     section4_x = section3_x + section_width + 10
@@ -2110,7 +2133,8 @@ def draw_cyber_shop(surface):
     stats_lines = [
         f"Weapon Damage: {20 + (weapon_level * 5) + cyber_damage}",
         f"Max Health: {max_health + cyber_health} | Current: {health}",
-        f"Ammo: {ammo}/{max_ammo + cyber_ammo_cap}"
+        f"Ammo: {ammo}/{max_ammo + cyber_ammo_cap}",
+        f"Ammo Packs bought (this level): {ammo_packs_bought.get(current_room[0],0)}/{MAX_AMMO_PACKS}"
     ]
     
     for i, line in enumerate(stats_lines):
@@ -2167,7 +2191,9 @@ def draw_cyber_shop(surface):
         # Purchase button
         if not item.get("purchased", False):
             button_rect = pygame.Rect(item_bg.x + item_bg.width - 90, item_bg.y + 70, 80, 30)
-            if inventory["Gold"] >= cost:
+            # Determine if player can purchase this cyber item (consider per-level ammo limits)
+            can_purchase = inventory["Gold"] >= cost and (item_id != "cyber_ammo" or ammo_packs_bought.get(current_room[0], 0) < MAX_AMMO_PACKS)
+            if can_purchase:
                 pygame.draw.rect(surface, (0, 80, 80), button_rect)
                 pygame.draw.rect(surface, (0, 200, 200), button_rect, 2)
                 button_text = small_font.render("BUY", True, (200, 255, 255))
@@ -2202,9 +2228,15 @@ def handle_cyber_purchase(item_id):
     if inventory["Gold"] < item["cost"]:
         set_message(f"Not enough credits for {item['name']}!", (255, 0, 0), 2.0)
         return False
-    
+
+    # Prevent buying more than allowed ammo packs per level
+    elif item_id == "cyber_ammo":
+        pack_amount = 50
+        ammo_packs_bought[level] = ammo_packs_bought.get(level, 0) + 1
+        inventory["Ammo Packs"] = inventory.get("Ammo Packs", 0) + 1
+        set_message(f"Purchased {item['name']} ({ammo_packs_bought[level]}/{MAX_AMMO_PACKS})! Ammo Packs: {inventory['Ammo Packs']}", (0, 255, 255), 2.0)
+    # Deduct cost and apply effects per item. Only mark persistent items as purchased.
     inventory["Gold"] -= item["cost"]
-    item["purchased"] = True
     
     if item_id == "cyber_weapon":
         has_weapon = True
@@ -2214,17 +2246,24 @@ def handle_cyber_purchase(item_id):
         weapon_level += 1
         quests["buy_laser_weapon"]["complete"] = True
         quests["upgrade_laser"]["active"] = True
+        item["purchased"] = True
         set_message(f"Purchased {item['name']}! +15 Damage, +50 Ammo, Faster Fire Rate!", (0, 255, 255), 3.0)
     
     elif item_id == "cyber_armor":
         max_health += 50
         health = max_health
         quests["upgrade_energy_shield"]["active"] = True
+        item["purchased"] = True
         set_message(f"Purchased {item['name']}! +50 Max Health", (0, 255, 255), 3.0)
     
     elif item_id == "cyber_ammo":
-        ammo = min(max_ammo, ammo + 50)
-        set_message(f"Purchased {item['name']}! +50 Energy Cells", (0, 255, 255), 2.0)
+        # Consumable: increment per-level counter and add ammo (50 per pack)
+        level = current_room[0]
+        pack_amount = 50
+        ammo_packs_bought[level] = ammo_packs_bought.get(level, 0) + 1
+        ammo = min(max_ammo, ammo + pack_amount)
+        inventory["Ammo"] = inventory.get("Ammo", 0) + pack_amount
+        set_message(f"Purchased {item['name']} ({ammo_packs_bought[level]}/{MAX_AMMO_PACKS})! +{pack_amount} Energy Cells", (0, 255, 255), 2.0)
     
     elif item_id == "cyber_potion":
         health = min(max_health, health + 50)
@@ -2791,7 +2830,8 @@ def draw_blacksmith_shop(surface):
     
     stats_lines = [
         f"Weapon: {'Equipped' if has_weapon else 'None'} (Lvl {weapon_level}) | Damage: {20 + (weapon_level * 5)}",
-        f"Armor: Lvl {armor_level} | Health: {max_health} | Ammo: {ammo}/{max_ammo}"
+        f"Armor: Lvl {armor_level} | Health: {max_health} | Ammo: {ammo}/{max_ammo}",
+        f"Ammo Packs bought (this level): {ammo_packs_bought.get(current_room[0],0)}/{MAX_AMMO_PACKS}"
     ]
     
     for i, line in enumerate(stats_lines):
@@ -2820,11 +2860,11 @@ def draw_blacksmith_shop(surface):
             continue
         if item_data["type"] in ["weapon", "consumable"]:
             # Basic items column (left)
-            item_bg = pygame.Rect(items_rect.x + 20, y_offset_basic, items_rect.width//2 - 40, 80)
+            item_bg = pygame.Rect(items_rect.x + 20, y_offset_basic, items_rect.width//2 - 60, 80)
             y_offset_basic += 100
         else:
             # Upgrades column (right) 
-            item_bg = pygame.Rect(items_rect.x + items_rect.width//2 + 20, y_offset_upgrade, items_rect.width//2 - 40, 80)
+            item_bg = pygame.Rect(items_rect.x + items_rect.width//2 + 20, y_offset_upgrade, items_rect.width//2 - 60, 80)
             y_offset_upgrade += 100
         
         # Different background color based on purchase status and affordability
@@ -2848,14 +2888,14 @@ def draw_blacksmith_shop(surface):
         
         surface.blit(name_text, (item_bg.x + 10, item_bg.y + 10))
         surface.blit(desc_text, (item_bg.x + 10, item_bg.y + 35))
-        surface.blit(cost_text, (item_bg.x + item_bg.width - 100, item_bg.y + 10))
+        surface.blit(cost_text, (item_bg.right - 90, item_bg.y + 10))
         
         # Purchase status or button
         if item_data.get("purchased", False):
             status_text = font.render("PURCHASED", True, (100, 255, 100))
-            surface.blit(status_text, (item_bg.x + item_bg.width - 110, item_bg.y + 40))
+            surface.blit(status_text, (item_bg.right - 110, item_bg.y + 40))
         else:
-            button_rect = pygame.Rect(item_bg.x + item_bg.width - 100, item_bg.y + 40, 90, 30)
+            button_rect = pygame.Rect(item_bg.right - 100, item_bg.y + 40, 90, 30)
             can_purchase = inventory["Gold"] >= item_data["cost"] and _can_purchase_item(item_id)
             
             if can_purchase:
@@ -2897,6 +2937,10 @@ def _can_purchase_item(item_id):
         return has_weapon and weapon_level < 5  
     
     elif item_id in ["ammo_pack", "health_potion"]:
+        # Ammo packs limited per level, health potions unlimited
+        if item_id == "ammo_pack":
+            level = current_room[0]
+            return ammo_packs_bought.get(level, 0) < MAX_AMMO_PACKS
         return True 
     
     return False
@@ -2939,8 +2983,11 @@ def handle_blacksmith_purchase(item_id):
         quests["upgrade_sword"]["active"] = True
     
     elif item_id == "ammo_pack":
-        ammo = min(max_ammo, ammo + 30)
-        set_message(f"Purchased {item['name']}! Ammo: {ammo}/{max_ammo}", (0, 255, 0), 2.0)
+        # Increment per-level ammo pack counter and add one pack to inventory
+        level = current_room[0]
+        ammo_packs_bought[level] = ammo_packs_bought.get(level, 0) + 1
+        inventory["Ammo Packs"] = inventory.get("Ammo Packs", 0) + 1
+        set_message(f"Purchased {item['name']} ({ammo_packs_bought[level]}/{MAX_AMMO_PACKS})! Ammo Packs: {inventory['Ammo Packs']}", (0, 255, 0), 2.0)
     
     elif item_id == "health_potion":
         health = min(max_health, health + 30)
@@ -4122,9 +4169,13 @@ while running:
                 
                 
                 elif event.key == pygame.K_r and has_weapon and not is_reloading and ammo < max_ammo:
-                    is_reloading = True
-                    reload_time = 2.0
-                    set_message("Reloading...", (255, 200, 0), 1.0)
+                    # Only allow reload if player has at least one ammo pack
+                    if inventory.get("Ammo Packs", 0) > 0:
+                        is_reloading = True
+                        reload_time = 2.0
+                        set_message("Reloading...", (255, 200, 0), 1.0)
+                    else:
+                        set_message("No ammo packs! Buy some from the blacksmith.", (255, 100, 0), 1.5)
                 
                 # esc to return to main menu
                 elif event.key == pygame.K_ESCAPE and not upgrade_shop_visible and not safe_visible and not maze_visible:
@@ -4221,7 +4272,13 @@ while running:
         if is_reloading:
             reload_time -= dt / 1000.0
             if reload_time <= 0:
-                ammo = max_ammo
+                # Consume one ammo pack and refill weapon to max
+                if inventory.get("Ammo Packs", 0) > 0:
+                    inventory["Ammo Packs"] -= 1
+                    ammo = max_ammo
+                else:
+                    # no packs left; do nothing
+                    set_message("Reload failed: no ammo packs.", (255, 100, 0), 1.5)
                 is_reloading = False
                 reload_time = 0.0
         
