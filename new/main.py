@@ -161,6 +161,8 @@ upgrade_costs = {
     "weapon": {1: 30, 2: 50, 3: 75, 4: 100, 5: 150},
     "armor": {1: 25, 2: 45, 3: 70, 4: 95, 5: 130}
 }
+# Maximum upgrade caps
+ARMOR_MAX_LEVEL = 5
     
 #  simple image loading with caching and placeholders
 ASSETS_DIR = "assets"
@@ -2672,7 +2674,9 @@ def draw_blacksmith_shop(surface):
     item_buttons = []
     
     for item_id, item_data in blacksmith_items.items():
-       
+        # Skip cyber-only items (laser/neon weapons) when in the medieval world (level 0)
+        if item_data.get("cyber_only", False) and current_room[0] == 0:
+            continue
         if item_data["type"] in ["weapon", "consumable"]:
             # Basic items column (left)
             item_bg = pygame.Rect(items_rect.x + 20, y_offset_basic, items_rect.width//2 - 40, 80)
@@ -2745,7 +2749,8 @@ def _can_purchase_item(item_id):
         return not item["purchased"] 
     
     elif item_id == "armor_upgrade":
-        return armor_level < 5  
+        # Allow armor purchase only until the cap
+        return armor_level < ARMOR_MAX_LEVEL
     
     elif item_id == "weapon_upgrade":
         return has_weapon and weapon_level < 5  
@@ -2774,7 +2779,7 @@ def handle_blacksmith_purchase(item_id):
             set_message("You need to buy a weapon first!", (255, 200, 0), 2.0)
         elif item_id == "weapon_upgrade" and weapon_level >= 5:
             set_message("Weapon is already at maximum level!", (255, 200, 0), 2.0)
-        elif item_id == "armor_upgrade" and armor_level >= 5:
+        elif item_id == "armor_upgrade" and armor_level >= ARMOR_MAX_LEVEL:
             set_message("Armor is already at maximum level!", (255, 200, 0), 2.0)
         else:
             set_message(f"Cannot purchase {item['name']} right now!", (255, 200, 0), 2.0)
@@ -2801,14 +2806,20 @@ def handle_blacksmith_purchase(item_id):
         set_message(f"Used {item['name']}! +30 Health", (0, 255, 0), 2.0)
     
     elif item_id == "armor_upgrade":
+        # Increase armor level, scale max health, and preserve current health percentage
+        prev_max = max_health
         armor_level += 1
         max_health = 100 + (armor_level * 20)
-        health = max_health  
+        if prev_max > 0:
+            health = min(max_health, int((health / prev_max) * max_health))
+        else:
+            health = max_health
         set_message(f"Armor upgraded to level {armor_level}! Max health: {max_health}", (0, 255, 0), 2.0)
-        
-
-        if armor_level >= 5:
-            item["purchased"] = True
+        # Double the cost for the next armor upgrade
+        try:
+            item["cost"] = int(item.get("cost", 0) * 2)
+        except Exception:
+            pass
     
     elif item_id == "weapon_upgrade":
         weapon_level += 1
