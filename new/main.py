@@ -491,6 +491,13 @@ quests = {
     "solve_drawbridge": {"active": False, "complete": False, "description": "Solve the drawbridge puzzle"},
     "collect_herbs": {"active": False, "complete": False, "description": "Collect 3 herbs for the Herb Collector"}
 }
+# Mini compiler quest state (Factory Exterior)
+compiler_quest_active = False
+compiler_quest_completed = False
+compiler_input = ""
+compiler_cursor_timer = 0.0
+compiler_cursor_visible = True
+
 #   collected items tracking
 collected_gold = set()
 collected_herbs = set()
@@ -561,6 +568,93 @@ def handle_cipher_key(event):
     # Accept letters and spaces
     if len(event.unicode) == 1 and (event.unicode.isalpha() or event.unicode.isspace()):
         cipher_input += event.unicode
+
+def handle_compiler_key(event):
+    """Handle key input while compiler mini-quest is active."""
+    global compiler_input, compiler_quest_active, compiler_cursor_timer, compiler_cursor_visible, compiler_quest_completed
+    # ESC closes the compiler (cancel)
+    if event.key == pygame.K_ESCAPE:
+        compiler_quest_active = False
+        set_message("Compiler exited.", (200, 200, 200), 1.5)
+        return
+    # BACKSPACE
+    if event.key == pygame.K_BACKSPACE:
+        compiler_input = compiler_input[:-1]
+        return
+    # Enter to submit code
+    if event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
+        # Very small sandboxed check: strip whitespace and accept simple print variants
+        code = compiler_input.strip()
+        normalized = code.replace(" ", "").lower()
+        # Accept: print("hello") or print('hello') or print("hello") with optional python3 print
+        accepted = False
+        for pattern in ["print(\"hello\")", "print('hello')", "print(\'hello\')", "print(\"hello\")"]:
+            if normalized == pattern:
+                accepted = True
+                break
+        # Also accept bare hello (helpful)
+        if code.lower() == "hello":
+            accepted = True
+
+        if accepted:
+            compiler_quest_active = False
+            compiler_quest_completed = True
+            # give a keycard to the player by spawning in room
+            room_key = tuple(current_room)
+            # only spawn if in Factory Exterior
+            if room_key == (1, 1, 2):
+                room_info = room_data.get(room_key, {})
+                key_x = player.centerx + 30
+                key_y = player.centery
+                room_info.setdefault("items", []).append({"type": "keycard", "x": key_x, "y": key_y, "id": f"keycard_compiler_{room_key[1]}_{room_key[2]}"})
+            set_message("Correct! Keycard spawned near you.", (0, 255, 0), 3.0)
+        else:
+            # provide helpful hint
+            set_message("Incorrect code. Try: print(\"hello\")", (255, 160, 160), 2.5)
+            compiler_input = ""
+        return
+
+    # Accept common visible characters for a small code editor
+    if len(event.unicode) == 1 and event.unicode.isprintable():
+        compiler_input += event.unicode
+
+def draw_compiler_ui(surface):
+    """Render a simple code-editor style overlay for the mini-quest."""
+    global compiler_input, compiler_cursor_timer, compiler_cursor_visible
+    # Dark translucent background
+    overlay = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 200))
+    surface.blit(overlay, (0, 0))
+
+    box = pygame.Rect(120, 120, ROOM_WIDTH - 240, ROOM_HEIGHT - 240)
+    pygame.draw.rect(surface, (30, 30, 40), box)
+    pygame.draw.rect(surface, (255, 215, 0), box, 2)
+
+    title = font.render("Mini-Compiler: Write Python to say hello", True, (200, 255, 255))
+    surface.blit(title, (box.x + 16, box.y + 12))
+
+    instr = small_font.render("Type code below. Example: print(\"hello\"). Press Enter to submit. Esc to cancel.", True, (220, 220, 220))
+    surface.blit(instr, (box.x + 16, box.y + 44))
+
+    # Editor area
+    editor = pygame.Rect(box.x + 16, box.y + 80, box.w - 32, 160)
+    pygame.draw.rect(surface, (10, 10, 20), editor)
+    pygame.draw.rect(surface, (120, 120, 140), editor, 1)
+
+    # blit code text
+    code_surf = small_font.render(compiler_input, True, (180, 255, 180))
+    surface.blit(code_surf, (editor.x + 8, editor.y + 8))
+
+    # cursor blink
+    compiler_cursor_timer += 1/60.0
+    if compiler_cursor_timer >= 0.5:
+        compiler_cursor_timer = 0.0
+        compiler_cursor_visible = not compiler_cursor_visible
+    if compiler_cursor_visible:
+        cursor_x = editor.x + 8 + code_surf.get_width()
+        cursor_y = editor.y + 8
+        pygame.draw.line(surface, (180, 255, 180), (cursor_x, cursor_y), (cursor_x, cursor_y + code_surf.get_height()), 2)
+
 
 # maze system
 maze_visible = False
@@ -723,6 +817,205 @@ TIMEBANDIT_WAVES = {
 }
 
 timebandit_rooms = {}
+
+# Drone system (patrol + radar)
+drones = []  # list of drone states across rooms
+
+def init_drones():
+    """Initialize drone entities from room_data objects.
+    Drones are defined as objects of type 'drone' in room_data; we read those
+    and create runtime state entries so they move independently and scan.
+    """
+    drones.clear()
+    for room_key, info in room_data.items():
+        for obj in info.get("objects", []):
+            if obj.get("type") == "drone":
+                state = {
+                    "room_key": tuple(room_key),
+                    "x": float(obj.get("x", ROOM_WIDTH//2)),
+                    "y": float(obj.get("y", ROOM_HEIGHT//2)),
+                    "w": obj.get("width", 48),
+                    "h": obj.get("height", 48),
+                    "vx": random.uniform(-20, 20),
+                    "vy": random.uniform(-20, 20),
+                    "scan_angle": math.radians(40),
+                    "scan_range": 220,
+                    "facing": random.random() * math.pi * 2,
+                    "detect_count": 0,
+                    "scan_timer": 0.0,
+                    "detect_cooldown": 0.0,
+                    "target": None,
+                    "max_speed": 80.0,
+                    "accel": 160.0,
+                    "turn_rate": math.radians(180),
+                }
+                drones.append(state)
+
+    # Ensure there are exactly 3 drones roaming in the Factory Exterior (level 1,1,2)
+    factory_key = (1, 1, 2)
+    existing = [d for d in drones if tuple(d["room_key"]) == factory_key]
+    needed = 3 - len(existing)
+    for i in range(max(0, needed)):
+        # place extra drone at random positions within room bounds
+        state = {
+            "room_key": factory_key,
+            "x": float(random.randint(80, ROOM_WIDTH - 80)),
+            "y": float(random.randint(80, ROOM_HEIGHT - 80)),
+            "w": 48,
+            "h": 48,
+            "vx": random.uniform(-20, 20),
+            "vy": random.uniform(-20, 20),
+            "scan_angle": math.radians(40),
+            "scan_range": 220,
+            "facing": random.random() * math.pi * 2,
+            "detect_count": 0,
+            "scan_timer": 0.0,
+            "detect_cooldown": 0.0,
+            "target": None,
+            "max_speed": 80.0,
+            "accel": 160.0,
+            "turn_rate": math.radians(180),
+        }
+        drones.append(state)
+
+def update_drones(dt):
+    """Update all drones: movement, scanning, and deployment when player detected."""
+    dt_sec = dt / 1000.0
+    room_key = tuple(current_room)
+    for d in drones:
+        if tuple(d["room_key"]) != room_key:
+            continue
+
+        # Smooth target-seeking movement for natural turning
+        # pick a new target occasionally or if reached
+        if not d.get("target") or random.random() < 0.004:
+            angle = random.random() * math.pi * 2
+            r = random.uniform(40, 140)
+            tx = d["x"] + math.cos(angle) * r
+            ty = d["y"] + math.sin(angle) * r
+            tx = max(20, min(ROOM_WIDTH - 20, tx))
+            ty = max(20, min(ROOM_HEIGHT - 20, ty))
+            d["target"] = (tx, ty)
+
+        tx, ty = d.get("target") or (d["x"], d["y"])
+        to_dx = tx - d["x"]
+        to_dy = ty - d["y"]
+        dist_to_target = math.hypot(to_dx, to_dy)
+        if dist_to_target < 8:
+            d["target"] = None
+
+        # desired velocity toward target
+        if dist_to_target > 1:
+            desired_vx = (to_dx / dist_to_target) * d.get("max_speed", 80.0)
+            desired_vy = (to_dy / dist_to_target) * d.get("max_speed", 80.0)
+        else:
+            desired_vx = 0.0
+            desired_vy = 0.0
+
+        # accelerate toward desired velocity
+        max_acc = d.get("accel", 160.0)
+        dvx = desired_vx - d["vx"]
+        dvy = desired_vy - d["vy"]
+        limit = max_acc * dt_sec
+        dvx = max(-limit, min(limit, dvx))
+        dvy = max(-limit, min(limit, dvy))
+        d["vx"] += dvx
+        d["vy"] += dvy
+
+        # apply light damping
+        d["vx"] *= 0.995
+        d["vy"] *= 0.995
+
+        # move and clamp to room
+        d["x"] = max(10, min(ROOM_WIDTH - d["w"] - 10, d["x"] + d["vx"] * dt_sec))
+        d["y"] = max(10, min(ROOM_HEIGHT - d["h"] - 10, d["y"] + d["vy"] * dt_sec))
+
+        # smooth facing: rotate toward velocity direction
+        speed = math.hypot(d["vx"], d["vy"])
+        if speed > 0.5:
+            desired_angle = math.atan2(d["vy"], d["vx"])
+            # compute shortest angle delta
+            delta = (desired_angle - d["facing"] + math.pi) % (2 * math.pi) - math.pi
+            max_turn = d.get("turn_rate", math.radians(180)) * dt_sec
+            delta = max(-max_turn, min(max_turn, delta))
+            d["facing"] = (d["facing"] + delta) % (2 * math.pi)
+
+        # scanning blink timer (controls sweep animation)
+        d["scan_timer"] += dt_sec * 1.5
+
+        # perform detection test (with per-drone cooldown)
+        # decrement cooldown timer
+        d["detect_cooldown"] = max(0.0, d.get("detect_cooldown", 0.0) - dt_sec)
+        dx = player.centerx - (d["x"] + d["w"]/2)
+        dy = player.centery - (d["y"] + d["h"]/2)
+        dist = math.hypot(dx, dy)
+        if dist <= d["scan_range"]:
+            angle_to_player = math.atan2(dy, dx)
+            diff = (angle_to_player - d["facing"] + math.pi) % (2*math.pi) - math.pi
+            if abs(diff) <= d["scan_angle"]/2:
+                # only trigger if cooldown elapsed
+                if d.get("detect_cooldown", 0.0) <= 0.0:
+                    d["detect_count"] += 1
+                    # spawn 2-3 enemies per detection
+                    spawn_count = random.randint(2, 3)
+                    deploy_enemies_from_drone(d, spawn_count)
+                    # set 1 second cooldown before next detection
+                    d["detect_cooldown"] = 1.0
+
+def draw_drones(surface):
+    """Draw drones for current room with radar triangle sweep."""
+    room_key = tuple(current_room)
+    for d in drones:
+        if tuple(d["room_key"]) != room_key:
+            continue
+        # draw drone image (objects/drone.png expected)
+        img = load_object_image("drone", int(d["w"]), int(d["h"]))
+        if img:
+            surface.blit(img, (int(d["x"]), int(d["y"])))
+        else:
+            # fallback: circle
+            pygame.draw.circle(surface, (180, 180, 200), (int(d["x"]+d["w"]/2), int(d["y"]+d["h"]/2)), 16)
+
+        # radar triangle: a semi-transparent red cone
+        cx = d["x"] + d["w"]/2
+        cy = d["y"] + d["h"]/2
+        angle = d["facing"]
+        spread = d["scan_angle"]
+        r = d["scan_range"] * (0.9 + 0.1 * math.sin(d.get("scan_timer", 0)))
+        left = (cx + math.cos(angle - spread/2) * r, cy + math.sin(angle - spread/2) * r)
+        right = (cx + math.cos(angle + spread/2) * r, cy + math.sin(angle + spread/2) * r)
+        radar_surf = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+        pygame.draw.polygon(radar_surf, (255, 0, 0, 60), [(cx, cy), left, right])
+        pygame.draw.polygon(radar_surf, (255, 0, 0, 160), [(cx, cy), left, right], 2)
+        surface.blit(radar_surf, (0,0))
+
+def deploy_enemies_from_drone(drone, count):
+    """Deploy `count` time-bandit enemies near the drone's position into the room's active list.
+    Each detection increases `count` so more enemies are sent on repeated detections.
+    """
+    room_key = tuple(drone["room_key"])
+    # If player is doing the compiler mini-quest, drones should not spawn more enemies
+    if compiler_quest_active:
+        return
+    # ensure timebandit room state exists
+    state = timebandit_rooms.get(room_key)
+    if state is None:
+        state = {"waves": [], "wave_index": 0, "active": [], "respawn": 0.0, "key_given": False}
+        timebandit_rooms[room_key] = state
+
+    # spawn `count` enemies at random offsets around the drone
+    for i in range(count):
+        rx = int(drone["x"] + drone["w"]/2 + random.randint(-60, 60))
+        ry = int(drone["y"] + drone["h"]/2 + random.randint(-60, 60))
+        # set damage so bandits deal contact damage
+        tb = {"x": float(rx), "y": float(ry), "alive": True, "loot_given": False, "damage": TIMEBANDIT_BASE_DAMAGE}
+        # give default size override if needed
+        default_w, default_h = get_npc_size("timebandit")
+        tb["w"] = default_w
+        tb["h"] = default_h
+        state["active"].append(tb)
+    set_message(f"Drone detected you! +{count} Time Bandits deployed.", (255, 80, 160), 2.0)
+
 
 def _init_timebandits():
     """Prepare time-bandit wave state for configured rooms."""
@@ -938,13 +1231,14 @@ room_data = {
                  "interactive": []
                  , "npcs": [],
                    "items": []},
-    (1, 1, 2): {"name": "Factory Exterior",  
-                "objects": [{"type": "invisible", "x": 280, "y": 305, "width": 225, "height": 195},
-                            {"type": "invisible", "x": 700, "y": 135, "width": 175, "height": 505},
-                            ],
-                 "interactive": []
-                 , "npcs": [],
-                   "items": []},
+                (1, 1, 2): {"name": "Factory Exterior",  
+                                                                                                                                "objects": [{"type": "invisible", "x": 280, "y": 305, "width": 225, "height": 195},
+                                                                                                                                                                                                                                {"type": "invisible", "x": 700, "y": 135, "width": 175, "height": 505}],
+                                 "interactive": [
+                                         {"type": "compiler", "x": 560, "y": 220, "width": 140, "height": 80}
+                                 ]
+                                 , "npcs": [],
+                                     "items": []},
     (1, 2, 0): {"name": "Core Reactor Room", 
                 "objects": [],
                  "interactive": []
@@ -2229,12 +2523,12 @@ def handle_cyber_purchase(item_id):
         set_message(f"Not enough credits for {item['name']}!", (255, 0, 0), 2.0)
         return False
 
-    # Prevent buying more than allowed ammo packs per level
-    elif item_id == "cyber_ammo":
-        pack_amount = 50
-        ammo_packs_bought[level] = ammo_packs_bought.get(level, 0) + 1
-        inventory["Ammo Packs"] = inventory.get("Ammo Packs", 0) + 1
-        set_message(f"Purchased {item['name']} ({ammo_packs_bought[level]}/{MAX_AMMO_PACKS})! Ammo Packs: {inventory['Ammo Packs']}", (0, 255, 255), 2.0)
+    # Prevent buying more than allowed ammo packs per level (check before charging)
+    if item_id == "cyber_ammo":
+        level = current_room[0]
+        if ammo_packs_bought.get(level, 0) >= MAX_AMMO_PACKS:
+            set_message("Ammo pack purchase limit reached for this level!", (255, 200, 0), 2.0)
+            return False
     # Deduct cost and apply effects per item. Only mark persistent items as purchased.
     inventory["Gold"] -= item["cost"]
     
@@ -2257,13 +2551,12 @@ def handle_cyber_purchase(item_id):
         set_message(f"Purchased {item['name']}! +50 Max Health", (0, 255, 255), 3.0)
     
     elif item_id == "cyber_ammo":
-        # Consumable: increment per-level counter and add ammo (50 per pack)
+        # Consumable: increment per-level counter and add one pack to inventory
         level = current_room[0]
         pack_amount = 50
         ammo_packs_bought[level] = ammo_packs_bought.get(level, 0) + 1
-        ammo = min(max_ammo, ammo + pack_amount)
-        inventory["Ammo"] = inventory.get("Ammo", 0) + pack_amount
-        set_message(f"Purchased {item['name']} ({ammo_packs_bought[level]}/{MAX_AMMO_PACKS})! +{pack_amount} Energy Cells", (0, 255, 255), 2.0)
+        inventory["Ammo Packs"] = inventory.get("Ammo Packs", 0) + 1
+        set_message(f"Purchased {item['name']} ({ammo_packs_bought[level]}/{MAX_AMMO_PACKS})! Ammo Packs: {inventory['Ammo Packs']}", (0, 255, 255), 2.0)
     
     elif item_id == "cyber_potion":
         health = min(max_health, health + 50)
@@ -2352,7 +2645,7 @@ def draw_object(x, y, obj_type, surface, level, width=None, height=None):
     if obj_type in ["tree", "rock", "building", "bridge_wall", "bridge"]:
         colliders.append(rect)
     
-    if obj_type in ["anvil", "campfire", "cage", "lever", "portal", "bookshelf", "rune", "safe", "datahub"]:
+    if obj_type in ["anvil", "campfire", "cage", "lever", "portal", "bookshelf", "rune", "safe", "datahub", "compiler"]:
         interactive_objects.append({"rect": rect, "type": obj_type, "x": x, "y": y})
         if obj_type != "portal":  
             colliders.append(rect)
@@ -3477,7 +3770,8 @@ def update_goblins(dt):
 
         # Contact damage
         goblin_rect = pygame.Rect(goblin["x"], goblin["y"], w, h)
-        if goblin_rect.colliderect(player) and goblin_contact_cooldown <= 0:
+        # Skip damage while compiler mini-quest is active
+        if not compiler_quest_active and goblin_rect.colliderect(player) and goblin_contact_cooldown <= 0:
             health = max(0, health - GOBLIN_CONTACT_DAMAGE)
             goblin_contact_cooldown = 0.75
             set_message(f"-{GOBLIN_CONTACT_DAMAGE} HP (Goblin)", (255, 80, 80), 1.0)
@@ -3634,11 +3928,16 @@ def update_timebandits(dt):
         tb_rect = pygame.Rect(tb["x"], tb["y"], int(w), int(h))
         if not tb.get("is_miniboss"):
             tb_damage = tb.get("damage", TIMEBANDIT_BASE_DAMAGE)
-            if tb_rect.colliderect(player) and goblin_contact_cooldown <= 0:
+            # per-bandit contact cooldown to ensure consistent damage application
+            tb["contact_cooldown"] = max(0.0, tb.get("contact_cooldown", 0.0) - dt_sec)
+            # Skip damage if compiler quest active
+            if not compiler_quest_active and tb_rect.colliderect(player) and tb.get("contact_cooldown", 0.0) <= 0.0:
                 health = max(0, health - tb_damage)
                 player_electrified_timer = 3.0  # Electrified for 3 seconds
+                tb["contact_cooldown"] = 0.75
+                # keep global cooldown in sync for legacy systems
                 goblin_contact_cooldown = 0.75
-                set_message("You are ELECTRIFIED!", (0, 200, 255), 2.0)
+                set_message(f"-{tb_damage} HP (Time Bandit)", (255, 80, 80), 1.2)
 
     # Simple separation to avoid stacking: push bandits apart
     min_sep = (default_w + default_h) / 4
@@ -3946,6 +4245,19 @@ def handle_interaction():
                     set_message("Data Hub error: cannot start cipher.", (255, 0, 0), 3.0)
                     print("start_cipher error:", e)
                 return
+            elif obj_type == "compiler" and room_key == (1, 1, 2):
+                # Start the mini compiler quest: player becomes invincible while coding
+                try:
+                    global compiler_quest_active, compiler_input, compiler_cursor_timer, compiler_cursor_visible
+                    compiler_quest_active = True
+                    compiler_input = ""
+                    compiler_cursor_timer = 0.0
+                    compiler_cursor_visible = True
+                    set_message("Mini-quest: Write Python code that says hello. Press Enter to submit.", (0, 200, 255), 4.0)
+                except Exception as e:
+                    set_message("Cannot start compiler quest.", (255, 0, 0), 2.0)
+                    print("compiler start error:", e)
+                return
    
     if room_key == (1, 0, 1):  
         for inter_obj in interactive_objects:
@@ -4010,12 +4322,19 @@ back_button_hover = False
 boss_initialized = False
 boss2_initialized = False
 
+# initialize runtime systems that depend on room_data
+try:
+    init_drones()
+except Exception:
+    # if room_data isn't defined yet for any reason, ignore and allow later initialization
+    pass
+
 # main loop listens for input updates game state and draws world
 while running:
     dt = clock.tick(60)
     keys_pressed = pygame.key.get_pressed()
     mouse_pos = pygame.mouse.get_pos()
-    
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -4121,6 +4440,14 @@ while running:
                         safe_input = safe_input[:-1]
                     elif event.key == pygame.K_ESCAPE:
                         safe_visible = False
+
+                elif compiler_quest_active:
+                    try:
+                        handle_compiler_key(event)
+                    except Exception as e:
+                        compiler_quest_active = False
+                        set_message("Compiler input error.", (255, 0, 0), 2.0)
+                        print("handle_compiler_key error:", e)
                 
                 elif dialogue_active and event.key == pygame.K_SPACE:
                     dialogue_index += 1
@@ -4288,11 +4615,20 @@ while running:
         
         update_bullets(dt)
         
-       
         pickup_items()
-        
-       
+
+        # update drones for current room
+        try:
+            update_drones(dt)
+        except Exception:
+            pass
+
         player_moving = (abs(dx) > 0 or abs(dy) > 0)
+        # draw drones before the player so they sit in the world
+        try:
+            draw_drones(screen)
+        except Exception:
+            pass
         draw_player(screen, player, dt, player_moving)
         draw_player_pointer(screen, player)
         
@@ -4332,6 +4668,14 @@ while running:
                 cipher_visible = False
                 set_message("Error displaying Data Hub.", (255, 0, 0), 3.0)
                 print("draw_cipher_overlay error:", e)
+        # Draw compiler UI overlay if active (makes player invincible while active)
+        if compiler_quest_active:
+            try:
+                draw_compiler_ui(screen)
+            except Exception as e:
+                compiler_quest_active = False
+                set_message("Compiler display error.", (255, 0, 0), 2.0)
+                print("draw_compiler_ui error:", e)
         
        
         near_object = False
