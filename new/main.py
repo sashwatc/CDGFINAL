@@ -691,6 +691,103 @@ maze_layout = [
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 ]
 
+race_visible = False
+race_completed = False
+race_checkpoint_hit = False
+race_timer = 0.0
+race_time_limit = 35.0
+race_offtrack_timer = 0.0
+race_car = {"x": 0.0, "y": 0.0, "w": 22, "h": 12, "speed": 220.0}
+
+def _race_track_rects():
+    outer = pygame.Rect(140, 120, 520, 560)
+    inner = outer.inflate(-240, -240)
+    start_line = pygame.Rect(ROOM_WIDTH // 2 - 70, outer.bottom - 24, 140, 12)
+    checkpoint = pygame.Rect(ROOM_WIDTH // 2 - 70, outer.top + 12, 140, 12)
+    return outer, inner, start_line, checkpoint
+
+def _reset_race_car():
+    global race_car, race_checkpoint_hit
+    outer, inner, start_line, checkpoint = _race_track_rects()
+    race_car["x"] = start_line.centerx - race_car["w"] / 2
+    race_car["y"] = start_line.centery - race_car["h"] / 2 - 6
+    race_checkpoint_hit = False
+
+def start_race_minigame():
+    global race_visible, race_timer, race_completed, race_offtrack_timer
+    race_visible = True
+    race_completed = False
+    race_timer = 0.0
+    race_offtrack_timer = 0.0
+    _reset_race_car()
+    set_message("Rail Race: Hit the top checkpoint, then cross the start line!", (120, 220, 255), 3.0)
+
+def update_race_minigame(dt, keys_pressed):
+    global race_timer, race_visible, race_checkpoint_hit, race_offtrack_timer
+    if not race_visible:
+        return
+    dt_sec = dt / 1000.0
+    race_timer += dt_sec
+    if race_timer >= race_time_limit:
+        race_visible = False
+        set_message("Race timed out. Try again!", (255, 160, 120), 2.0)
+        return
+
+    move_x = (keys_pressed[pygame.K_RIGHT] or keys_pressed[pygame.K_d]) - (keys_pressed[pygame.K_LEFT] or keys_pressed[pygame.K_a])
+    move_y = (keys_pressed[pygame.K_DOWN] or keys_pressed[pygame.K_s]) - (keys_pressed[pygame.K_UP] or keys_pressed[pygame.K_w])
+    if move_x != 0 or move_y != 0:
+        norm = math.hypot(move_x, move_y)
+        if norm != 0:
+            move_x /= norm
+            move_y /= norm
+        race_car["x"] += move_x * race_car["speed"] * dt_sec
+        race_car["y"] += move_y * race_car["speed"] * dt_sec
+
+    car_rect = pygame.Rect(int(race_car["x"]), int(race_car["y"]), race_car["w"], race_car["h"])
+    outer, inner, start_line, checkpoint = _race_track_rects()
+
+    if not outer.contains(car_rect) or inner.colliderect(car_rect):
+        _reset_race_car()
+        if race_offtrack_timer <= 0.0:
+            set_message("Stay on the track!", (255, 200, 120), 1.2)
+            race_offtrack_timer = 1.0
+
+    if race_offtrack_timer > 0.0:
+        race_offtrack_timer = max(0.0, race_offtrack_timer - dt_sec)
+
+    if car_rect.colliderect(checkpoint):
+        race_checkpoint_hit = True
+
+    if race_checkpoint_hit and car_rect.colliderect(start_line):
+        race_visible = False
+        set_message("Race complete! Nice driving.", (120, 255, 160), 2.5)
+
+def draw_race_minigame(surface):
+    if not race_visible:
+        return
+    overlay = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 200))
+    surface.blit(overlay, (0, 0))
+
+    outer, inner, start_line, checkpoint = _race_track_rects()
+    pygame.draw.rect(surface, (40, 40, 60), outer)
+    pygame.draw.rect(surface, (0, 0, 0), inner)
+    pygame.draw.rect(surface, (120, 120, 160), outer, 3)
+    pygame.draw.rect(surface, (60, 60, 80), inner, 2)
+    pygame.draw.rect(surface, (255, 255, 255), start_line)
+    pygame.draw.rect(surface, (120, 200, 255), checkpoint)
+
+    car_rect = pygame.Rect(int(race_car["x"]), int(race_car["y"]), race_car["w"], race_car["h"])
+    pygame.draw.rect(surface, (255, 80, 80), car_rect)
+    pygame.draw.rect(surface, (255, 220, 220), car_rect, 2)
+
+    title = font.render("Rail Race", True, (220, 240, 255))
+    surface.blit(title, (ROOM_WIDTH // 2 - title.get_width() // 2, 40))
+    instr = small_font.render("Arrow keys or WASD to drive. Hit blue checkpoint, then cross white line.", True, (200, 200, 220))
+    surface.blit(instr, (ROOM_WIDTH // 2 - instr.get_width() // 2, 70))
+    timer_left = max(0.0, race_time_limit - race_timer)
+    timer_text = small_font.render(f"Time: {timer_left:.1f}s", True, (255, 220, 160))
+    surface.blit(timer_text, (ROOM_WIDTH // 2 - timer_text.get_width() // 2, 96))
               
 boss = None
 boss_health = 0
@@ -1325,7 +1422,9 @@ room_data = {
                                                         {"type": "invisible", "x": 465, "y": 710, "width": 225, "height": 75}, 
                                                         {"type": "invisible", "x": 100, "y": 375, "width": 150, "height": 75}
                                                      ],
-                 "interactive": []
+                 "interactive": [
+                     {"type": "race_terminal", "x": ROOM_WIDTH // 2 - 14, "y": ROOM_HEIGHT // 2 - 14, "width": 28, "height": 28}
+                 ]
                  , "npcs": [],
                  "items": []},
     (1, 1, 1): {"name": "Neon Streets",      "objects": [{"type": "invisible", "x": 100, "y": 215, "width": 155, "height": 125}],
@@ -2809,6 +2908,15 @@ def draw_object(x, y, obj_type, surface, level, width=None, height=None):
         rect = pygame.Rect(x, y, width, height)
         interactive_objects.append({"rect": rect, "type": obj_type, "x": x, "y": y})
         return rect    
+    elif obj_type == "race_terminal":
+        rect = pygame.Rect(x, y, width, height)
+        radius = max(6, rect.width // 2)
+        pygame.draw.circle(surface, (30, 120, 160), rect.center, radius + 4)
+        pygame.draw.circle(surface, (80, 220, 255), rect.center, radius)
+        pygame.draw.circle(surface, (10, 40, 60), rect.center, max(2, radius - 6))
+        pygame.draw.circle(surface, (200, 250, 255), rect.center, 3)
+        interactive_objects.append({"rect": rect, "type": obj_type, "x": x, "y": y})
+        return rect
 
     img = load_object_image(obj_type, width, height)
     surface.blit(img, (x, y))
@@ -2820,9 +2928,9 @@ def draw_object(x, y, obj_type, surface, level, width=None, height=None):
     if obj_type in ["tree", "rock", "building", "bridge_wall", "bridge"]:
         colliders.append(rect)
     
-    if obj_type in ["anvil", "campfire", "cage", "lever", "portal", "bookshelf", "rune", "safe", "datahub", "compiler"]:
+    if obj_type in ["anvil", "campfire", "cage", "lever", "portal", "bookshelf", "rune", "safe", "datahub", "compiler", "race_terminal"]:
         interactive_objects.append({"rect": rect, "type": obj_type, "x": x, "y": y})
-        if obj_type != "portal":  
+        if obj_type not in ["portal", "race_terminal"]:  
             colliders.append(rect)
     
     return rect
@@ -3908,7 +4016,7 @@ def update_goblins(dt):
     state = goblin_rooms.get(room_key)
     if not state:
         return
-    if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible:
+    if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_visible:
         return
     global goblin_contact_cooldown, health
 
@@ -4032,7 +4140,7 @@ def update_timebandits(dt):
     state = timebandit_rooms.get(room_key)
     if not state:
         return
-    if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible:
+    if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_visible:
         return
     global goblin_contact_cooldown, health, player_electrified_timer
 
@@ -4448,6 +4556,9 @@ def handle_interaction():
                     set_message("Cannot start compiler quest.", (255, 0, 0), 2.0)
                     print("compiler start error:", e)
                 return
+            elif obj_type == "race_terminal" and room_key == (1, 1, 0):
+                start_race_minigame()
+                return
    
     if room_key == (1, 0, 1):  
         for inter_obj in interactive_objects:
@@ -4611,6 +4722,13 @@ while running:
         
         elif event.type == pygame.KEYDOWN:
             if game_state == "playing":
+                if race_visible:
+                    if event.key == pygame.K_ESCAPE:
+                        race_visible = False
+                        set_message("Race exited.", (200, 200, 200), 1.2)
+                    elif event.key == pygame.K_r:
+                        _reset_race_car()
+                    continue
                 if maze_visible:
                                                               
                     handle_maze_input()
@@ -4680,7 +4798,7 @@ while running:
                     give_herbs_to_collector()
                 
                
-                elif event.key == pygame.K_SPACE and not upgrade_shop_visible and not dialogue_active and not safe_visible and not maze_visible:
+                elif event.key == pygame.K_SPACE and not upgrade_shop_visible and not dialogue_active and not safe_visible and not maze_visible and not race_visible:
                     if shoot_bullet():
                         set_message("Pew!", (255, 255, 0), 0.5)
                     elif not has_weapon:
@@ -4701,7 +4819,7 @@ while running:
                         set_message("No ammo packs! Buy some from the blacksmith.", (255, 100, 0), 1.5)
                 
                                             
-                elif event.key == pygame.K_ESCAPE and not upgrade_shop_visible and not safe_visible and not maze_visible:
+                elif event.key == pygame.K_ESCAPE and not upgrade_shop_visible and not safe_visible and not maze_visible and not race_visible:
                     game_state = "main_menu"
             
                                                                     
@@ -4745,8 +4863,11 @@ while running:
             player_direction = "left"
         
         
-        if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or safe_visible or maze_visible:
+        if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or safe_visible or maze_visible or race_visible:
             mv_x, mv_y = 0, 0
+
+        if race_visible:
+            update_race_minigame(dt, keys_pressed)
         
        
         player_speed_boost_timer = max(0.0, player_speed_boost_timer - (dt / 1000.0))
@@ -4868,6 +4989,9 @@ while running:
                 compiler_quest_active = False
                 set_message("Compiler display error.", (255, 0, 0), 2.0)
                 print("draw_compiler_ui error:", e)
+
+        if race_visible:
+            draw_race_minigame(screen)
         
        
         near_object = False
@@ -4880,7 +5004,7 @@ while running:
                 near_object = True
                 break
         
-        if near_object and not dialogue_active and not upgrade_shop_visible and not safe_visible and not maze_visible and not cipher_visible:
+        if near_object and not dialogue_active and not upgrade_shop_visible and not safe_visible and not maze_visible and not cipher_visible and not race_visible:
             hint = small_font.render("Press F to Interact", True, (255, 255, 255))
             screen.blit(hint, (player.centerx - 40, player.top - 25))
             
