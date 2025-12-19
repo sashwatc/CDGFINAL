@@ -3,6 +3,7 @@
 #Our game features an interactive based free map in which they can interact with bosses npcs and buy stuff, they have to compelte quests in order to progress to the next level.
 
 import pygame
+import traceback
 import os
 import math
 import random
@@ -410,8 +411,12 @@ GOBLIN_CONTACT_DAMAGE = 10
 goblin_contact_cooldown = 0.0  
 player_speed_boost_timer = 0.0
 player_electrified_timer = 0.0  # Electrify status effect (slows player)
+# Time Bandit base stats
+TIMEBANDIT_BASE_HP = 50
+TIMEBANDIT_BASE_DAMAGE = 10
 
 #  inventory system
+# initial player inventory
 inventory = {
     "Gold": 50,
     "Health Potions": 3,
@@ -419,21 +424,8 @@ inventory = {
     "Keys": 0,
     "Time Shards": 0
 }
-
-#  quest system
-quests = {
-    "talk_to_elder": {"active": True, "complete": False, "description": "Talk to Elder Rowan"},
-    "buy_weapon": {"active": False, "complete": False, "description": "Buy a weapon from the Blacksmith (20 Gold)"},
-    "upgrade_sword": {"active": False, "complete": False, "description": "Upgrade your weapon at the Blacksmith"},
-    "upgrade_armor": {"active": False, "complete": False, "description": "Upgrade your armor at the Blacksmith"},
-    "collect_herbs": {"active": False, "complete": False, "description": "Collect 3 Herbs from Forest"},
-    "rescue_knight": {"active": False, "complete": False, "description": "Rescue Knight Aelric"},
-    "solve_drawbridge": {"active": False, "complete": False, "description": "Solve Drawbridge Puzzle"},
-    "defeat_goblin_king": {"active": False, "complete": False, "description": "Defeat the Goblin King"},
-    "find_shard_1": {"active": False, "complete": False, "description": "Find First Time Shard"},
-}
-
-
+# initial quests (may be updated when entering levels)
+quests = {}
 #   collected items tracking
 collected_gold = set()
 collected_herbs = set()
@@ -1316,54 +1308,56 @@ def enter_level_2():
     global collected_gold, collected_herbs, collected_potions, collected_keys, collected_timeshards
     global boss_defeated, boss_drop_collected
     
-    # move player to Factory Exterior in Level 2
-    current_room[0] = 1
-    current_room[1] = 1
-    current_room[2] = 2
-    # place player at the Factory Exterior spawn point
-    # use a moderately right-of-center spawn so player faces the area
-    player.center = (ROOM_WIDTH // 2 + 150, ROOM_HEIGHT // 2)
-   
-    health = 100
-    max_health = 100
-    
-    has_weapon = False  
-    ammo = 0
-    max_ammo = 40  
-    weapon_level = 1  
-    
+    try:
+        # move player to Factory Exterior in Level 2
+        current_room[0] = 1
+        current_room[1] = 1
+        current_room[2] = 2
+        # place player at the Factory Exterior spawn point
+        # use a moderately right-of-center spawn so player faces the area
+        player.center = (ROOM_WIDTH // 2 + 150, ROOM_HEIGHT // 2)
+       
+        health = 100
+        max_health = 100
+        
+        has_weapon = False  
+        ammo = 0
+        max_ammo = 40  
+        weapon_level = 1
 
+        keep_gold = inventory.get("Gold", 0)
+        inventory = {
+            "Gold": keep_gold,
+            "Health Potions": 1,  
+            "Herbs": 0,
+            "Keys": 0,
+            "Time Shards": 0
+        }
+        
+        collected_gold.clear()
+        collected_herbs.clear()
+        collected_potions.clear()
+        collected_keys.clear()
+        collected_timeshards.clear()
+        
+        boss_defeated = False
+        boss_drop_collected = False
 
-    keep_gold = inventory["Gold"] 
-    inventory = {
-        "Gold": keep_gold,
-        "Health Potions": 1,  
-        "Herbs": 0,
-        "Keys": 0,
-        "Time Shards": 0
-    }
-    
-    collected_gold.clear()
-    collected_herbs.clear()
-    collected_potions.clear()
-    collected_keys.clear()
-    collected_timeshards.clear()
-    
-    boss_defeated = False
-    boss_drop_collected = False
-    
-
-    quests.clear()
-    quests.update({
-        "explore_neon_city": {"active": True, "complete": False, "description": "Explore the Neon City"},
-        "buy_laser_weapon": {"active": True, "complete": False, "description": "Buy a laser weapon from the Neon Market (50 Credits)"},
-        "upgrade_laser": {"active": False, "complete": False, "description": "Upgrade your laser weapon"},
-        "upgrade_energy_shield": {"active": False, "complete": False, "description": "Upgrade your energy shield"},
-        "defeat_cyber_boss": {"active": False, "complete": False, "description": "Defeat the Cyber Security AI"},
-        "find_shard_2": {"active": False, "complete": False, "description": "Find Second Time Shard"},
-    })
-    
-    set_message("Welcome to Level 2 – The Neon City! Good luck!", (0, 255, 255), 5.0)
+        quests.clear()
+        quests.update({
+            "explore_neon_city": {"active": True, "complete": False, "description": "Explore the Neon City"},
+            "buy_laser_weapon": {"active": True, "complete": False, "description": "Buy a laser weapon from the Neon Market (50 Credits)"},
+            "upgrade_laser": {"active": False, "complete": False, "description": "Upgrade your laser weapon"},
+            "upgrade_energy_shield": {"active": False, "complete": False, "description": "Upgrade your energy shield"},
+            "defeat_cyber_boss": {"active": False, "complete": False, "description": "Defeat the Cyber Security AI"},
+            "find_shard_2": {"active": False, "complete": False, "description": "Find Second Time Shard"},
+        })
+        
+        set_message("Welcome to Level 2 – The Neon City! Good luck!", (0, 255, 255), 5.0)
+    except Exception:
+        tb = traceback.format_exc()
+        print("Error entering level 2:\n", tb)
+        set_message("Error entering level 2 (see console).", (255, 0, 0), 5.0)
 def update_thrown_axes(dt_sec):
     """Update positions of thrown axes and check for collisions."""
     global boss_thrown_axes, health
@@ -1882,18 +1876,33 @@ def update_bullets(dt):
         # check time bandits as well
         tb_state = timebandit_rooms.get(room_key)
         if tb_state:
-            w, h = get_npc_size("timebandit")
+            default_w, default_h = get_npc_size("timebandit")
             for tb in tb_state["active"]:
                 if not tb.get("alive", True):
                     continue
+                w = int(tb.get("w", default_w))
+                h = int(tb.get("h", default_h))
                 tb_rect = pygame.Rect(tb["x"], tb["y"], w, h)
                 if tb_rect.collidepoint(bullet["x"], bullet["y"]):
-                    tb["alive"] = False
-                    if not tb.get("loot_given"):
-                        inventory["Gold"] += 15
-                        tb["loot_given"] = True
-                        set_message("+15 Gold (Time Bandit)", (255, 215, 0), 1.5)
-                    bullets_to_remove.append(i)
+                    # If the timebandit has HP (miniboss), subtract; otherwise kill in one hit
+                    if tb.get("hp") is not None:
+                        tb["hp"] -= bullet.get("damage", 0)
+                        bullets_to_remove.append(i)
+                        if tb["hp"] <= 0:
+                            tb["alive"] = False
+                            if not tb.get("loot_given"):
+                                # miniboss does NOT drop a keycard on death (per design)
+                                inventory["Gold"] += 150
+                                tb["loot_given"] = True
+                                set_message("Miniboss defeated!", (255, 215, 0), 2.5)
+                        # miniboss takes multiple hits; don't give normal bandit gold here
+                    else:
+                        tb["alive"] = False
+                        if not tb.get("loot_given"):
+                            inventory["Gold"] += 15
+                            tb["loot_given"] = True
+                            set_message("+15 Gold (Time Bandit)", (255, 215, 0), 1.5)
+                        bullets_to_remove.append(i)
                     break
 
             # If all waves finished and none active, spawn a keycard in this room once
@@ -2351,12 +2360,44 @@ def draw_timebandits(surface, room_key):
     state = timebandit_rooms.get(room_key)
     if not state:
         return
-    w, h = get_npc_size("timebandit")
+    default_w, default_h = get_npc_size("timebandit")
     for tb in state["active"]:
         if not tb.get("alive", True):
             continue
-        img = load_npc_image("timebandit")
-        surface.blit(img, (tb["x"], tb["y"]))
+        w = int(tb.get("w", default_w))
+        h = int(tb.get("h", default_h))
+        try:
+            img = load_npc_image("timebandit")
+            # scale image for minibosses if needed
+            if (w, h) != (default_w, default_h):
+                img = pygame.transform.scale(img, (w, h))
+            surface.blit(img, (tb["x"], tb["y"]))
+            # Draw miniboss health bar
+            if tb.get("boss"):
+                hp = tb.get("hp", 0)
+                max_hp = tb.get("max_hp", 1)
+                bar_w = w
+                bar_x = tb["x"]
+                bar_y = tb["y"] - 8
+                pygame.draw.rect(surface, (100, 0, 0), (bar_x, bar_y, bar_w, 6))
+                if max_hp > 0:
+                    pygame.draw.rect(surface, (255, 0, 0), (bar_x, bar_y, int(bar_w * (hp / max_hp)), 6))
+            # Draw sword swing when active (angle-based arc)
+            if tb.get("swinging") and tb.get("sword_rect"):
+                try:
+                    sx, sy, sw, sh = tb.get("sword_rect")
+                    sword_img = load_image("objects/sword.png", sw, sh)
+                    angle = tb.get("swing_angle", 0.0)
+                    rotated = pygame.transform.rotate(sword_img, -angle)
+                    if tb.get("swing_dir") == "left":
+                        rotated = pygame.transform.flip(rotated, True, False)
+                    surface.blit(rotated, (sx, sy))
+                except Exception:
+                    sx, sy, sw, sh = tb.get("sword_rect")
+                    pygame.draw.rect(surface, (200, 200, 200), (sx, sy, sw, sh))
+        except Exception:
+            # fallback: draw rectangle
+            pygame.draw.rect(surface, (200, 50, 200) if tb.get("boss") else (180, 60, 180), (int(tb["x"]), int(tb["y"]), w, h))
 
 def draw_item(surface, x, y, item_type, item_id):
     """Draw items using images or procedural graphics."""
@@ -3312,19 +3353,52 @@ def update_timebandits(dt):
         if state["wave_index"] < len(state["waves"]):
             state["respawn"] -= dt_sec
             if state["respawn"] <= 0:
-                spawn = state["waves"][state["wave_index"]]
+                idx = state["wave_index"]
+                spawn = state["waves"][idx]
                 state["active"] = [{"x": float(x), "y": float(y), "alive": True, "loot_given": False} for x, y in spawn]
+                # If this is the second wave (index 1), add a miniboss
+                if idx == 1:
+                    default_w, default_h = get_npc_size("timebandit")
+                    # slightly smaller than before (3x instead of 4x)
+                    miniboss_w = int(default_w * 3)
+                    miniboss_h = int(default_h * 3)
+                    miniboss_x = ROOM_WIDTH // 2 - miniboss_w // 2
+                    miniboss_y = ROOM_HEIGHT // 2 - miniboss_h // 2
+                    miniboss = {
+                        "x": float(miniboss_x),
+                        "y": float(miniboss_y),
+                        "alive": True,
+                        "loot_given": False,
+                        "boss": True,
+                        "is_miniboss": True,
+                        "hp": TIMEBANDIT_BASE_HP * 5,
+                        "max_hp": TIMEBANDIT_BASE_HP * 5,
+                        # miniboss sword damage (hits from sword should do 5 HP)
+                        "damage": 5,
+                        "w": miniboss_w,
+                        "h": miniboss_h,
+                        # swing attack state
+                        "swing_cooldown": random.uniform(2.0, 4.0),
+                        "swing_timer": 0.0,
+                        "swing_active": False,
+                        "swing_hit": False,
+                        "swing_rect": None,
+                    }
+                    state["active"].append(miniboss)
+                    set_message("A MINIBOSS approaches!", (255, 120, 180), 2.5)
                 state["wave_index"] += 1
                 state["respawn"] = 1.0
                 set_message("Time Bandits incoming!", (200, 80, 255), 1.5)
         return
 
     # Chase the player
-    w, h = get_npc_size("timebandit")
+    default_w, default_h = get_npc_size("timebandit")
     speed = 160
     for tb in state["active"]:
         if not tb.get("alive", True):
             continue
+        w = tb.get("w", default_w)
+        h = tb.get("h", default_h)
         gx = tb["x"] + w / 2
         gy = tb["y"] + h / 2
         dx = player.centerx - gx
@@ -3338,13 +3412,110 @@ def update_timebandits(dt):
         tb["x"] = max(0, min(ROOM_WIDTH - w, tb["x"]))
         tb["y"] = max(0, min(ROOM_HEIGHT - h, tb["y"]))
 
-        # Contact damage
-        tb_rect = pygame.Rect(tb["x"], tb["y"], w, h)
-        if tb_rect.colliderect(player) and goblin_contact_cooldown <= 0:
-            health = max(0, health - GOBLIN_CONTACT_DAMAGE)
-            player_electrified_timer = 3.0  # Electrified for 3 seconds
-            goblin_contact_cooldown = 0.75
-            set_message("You are ELECTRIFIED!", (0, 200, 255), 2.0)
+        # Contact damage: miniboss does NOT deal contact damage (only sword swing does)
+        tb_rect = pygame.Rect(tb["x"], tb["y"], int(w), int(h))
+        if not tb.get("is_miniboss"):
+            tb_damage = tb.get("damage", TIMEBANDIT_BASE_DAMAGE)
+            if tb_rect.colliderect(player) and goblin_contact_cooldown <= 0:
+                health = max(0, health - tb_damage)
+                player_electrified_timer = 3.0  # Electrified for 3 seconds
+                goblin_contact_cooldown = 0.75
+                set_message("You are ELECTRIFIED!", (0, 200, 255), 2.0)
+
+    # Simple separation to avoid stacking: push bandits apart
+    min_sep = (default_w + default_h) / 4
+    for i, a in enumerate(state["active"]):
+        if not a.get("alive", True):
+            continue
+        aw = a.get("w", default_w)
+        ah = a.get("h", default_h)
+        ax = a["x"] + aw / 2
+        ay = a["y"] + ah / 2
+        for j, b in enumerate(state["active"]):
+            if i == j or not b.get("alive", True):
+                continue
+            bw = b.get("w", default_w)
+            bh = b.get("h", default_h)
+            bx = b["x"] + bw / 2
+            by = b["y"] + bh / 2
+            ddx = ax - bx
+            ddy = ay - by
+            d = math.hypot(ddx, ddy)
+            if d <= 0:
+                continue
+            overlap = (min_sep - d)
+            if overlap > 0:
+                push = overlap * 0.5
+                nx = ddx / d
+                ny = ddy / d
+                a["x"] += nx * push
+                a["y"] += ny * push
+                b["x"] -= nx * push
+                b["y"] -= ny * push
+                # clamp
+                a["x"] = max(0, min(ROOM_WIDTH - aw, a["x"]))
+                a["y"] = max(0, min(ROOM_HEIGHT - ah, a["y"]))
+                b["x"] = max(0, min(ROOM_WIDTH - bw, b["x"]))
+                b["y"] = max(0, min(ROOM_HEIGHT - bh, b["y"]))
+
+    # Handle miniboss swing attacks using an arc (angle) like the main boss
+    for tb in state["active"]:
+        if not tb.get("alive", True) or not tb.get("is_miniboss"):
+            continue
+        # initialize fields
+        tb.setdefault("swing_cooldown", random.uniform(2.0, 4.0))
+        tb.setdefault("swing_angle", 0.0)
+        tb.setdefault("swinging", False)
+        tb.setdefault("swing_duration", 0.45)
+        tb.setdefault("swing_dir", "right")
+        tb.setdefault("sword_rect", None)
+
+        if not tb["swinging"]:
+            tb["swing_cooldown"] -= dt_sec
+            if tb["swing_cooldown"] <= 0:
+                # start swing
+                tb["swinging"] = True
+                tb["swing_angle"] = 0.0
+                tb["swing_dir"] = "left" if player.centerx < (tb["x"] + tb.get("w", default_w)/2) else "right"
+                tb["swing_cooldown"] = random.uniform(2.0, 4.0)
+        else:
+            # progress swing angle to 180 over swing_duration
+            swing_dur = max(0.05, tb.get("swing_duration", 0.45))
+            angle_speed = 180.0 / swing_dur
+            tb["swing_angle"] += angle_speed * dt_sec
+
+            # compute sword position similar to calculate_axe_rect but scaled to miniboss
+            w = tb.get("w", default_w)
+            h = tb.get("h", default_h)
+            center_x = tb["x"] + w/2
+            center_y = tb["y"] + h/2
+            radius = max(w, h) * 0.9
+            angle_rad = math.radians(tb["swing_angle"]) if tb.get("swing_dir") == "right" else math.radians(tb["swing_angle"])
+
+            if tb.get("swing_dir") == "right":
+                sx = center_x + radius * math.cos(angle_rad)
+                sy = center_y + radius * math.sin(angle_rad)
+            else:
+                sx = center_x - radius * math.cos(angle_rad)
+                sy = center_y + radius * math.sin(angle_rad)
+
+            # sword rect for collision/drawing
+            sword_w = int(w * 0.6)
+            sword_h = int(h * 0.4)
+            tb["sword_rect"] = (int(sx - sword_w/2), int(sy - sword_h/2), sword_w, sword_h)
+
+            # when swing finishes, check collision and apply damage once
+            if tb["swing_angle"] >= 180.0:
+                tb["swinging"] = False
+                tb["swing_angle"] = 0.0
+                sr = pygame.Rect(*tb["sword_rect"]) if tb.get("sword_rect") else None
+                # ensure the sword hit registers even if the player is overlapping the miniboss body
+                miniboss_rect = pygame.Rect(int(tb["x"]), int(tb["y"]), int(w), int(h))
+                if (sr and player.colliderect(sr)) or player.colliderect(miniboss_rect):
+                    dmg = tb.get("damage", 5)
+                    health = max(0, health - dmg)
+                    set_message(f"-{dmg} HP (Miniboss Sword)", (255, 80, 80), 1.5)
+                tb["sword_rect"] = None
 
 def pickup_items():
     """Handle item collection."""
