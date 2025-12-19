@@ -18,6 +18,9 @@ try:
 except Exception:
     pass
 os.chdir(os.path.dirname(__file__) if __file__ else os.getcwd())
+# quick setup for pygame and working directory
+# this makes sure the display and audio are initialised and we run from the game folder
+# small note sometimes audio fails on some systems but game still runs
                  
 #  game constants
 ROOM_WIDTH = 800    
@@ -284,6 +287,9 @@ def _auto_transparent_bg(img):
     return img
 
 def load_image(name, width=None, height=None):
+    # image loader caches images and makes nice placeholders when missing
+    # sometimes assets are not included so we draw a simple box with name
+    # this helps when testing without the full art bundle
     """Image loader with caching and readable placeholders."""
     cache_key = f"{name}_{width}x{height}" if width and height else name
     
@@ -326,6 +332,9 @@ def load_image(name, width=None, height=None):
 
 def load_smart_bg(level, row, col):
     """Return Surface for any level, or None if no file."""
+    # load_smart_bg picks the best background for the current level and tile
+    # it will fallback to a neutral background when a file is missing
+    # this keeps the game running even if some tiles are not drawn yet
     if level == 0:                              
         background_mapping = {
             (0, 0, 0): "village",
@@ -718,6 +727,9 @@ message_timer = 0.0
 message_color = (255, 255, 255)
 
                 
+# npc dialogue lines for characters in rooms
+# these are the lines that npcs will say when you interact with them
+# written in a plain human style so you can edit easily
 npc_dialogues = {
     (0, 0, 0, "elder"): [
         "Elder Rowan: Welcome, brave Arin!",
@@ -817,11 +829,7 @@ TIMEBANDIT_WAVES = {
         [(220, 220), (520, 300)],
         [(180, 420), (600, 200), (360, 520)],
     ],
-                                                                                    
-    (1, 2, 0): [
-        [(220, 220), (520, 300)],
-        [(180, 420), (600, 200), (360, 520)],
-    ],
+                                                                                     
 }
 
 timebandit_rooms = {}
@@ -834,6 +842,9 @@ def init_drones():
     Drones are defined as objects of type 'drone' in room_data; we read those
     and create runtime state entries so they move independently and scan.
     """
+    # drones patrol and scan the room for the player
+    # boss drones are larger and shoot lasers when they spot you
+    # normal drones will call reinforcements when they see you
     drones.clear()
     for room_key, info in room_data.items():
         for obj in info.get("objects", []):
@@ -843,25 +854,27 @@ def init_drones():
                     "room_key": tuple(room_key),
                     "x": float(obj.get("x", ROOM_WIDTH//2)),
                     "y": float(obj.get("y", ROOM_HEIGHT//2)),
-                    "w": obj.get("width", 120) if is_boss else obj.get("width", 48),
-                    "h": obj.get("height", 120) if is_boss else obj.get("height", 48),
+                    "w": obj.get("width", 160) if is_boss else obj.get("width", 48),
+                    "h": obj.get("height", 160) if is_boss else obj.get("height", 48),
                     "vx": random.uniform(-20, 20),
                     "vy": random.uniform(-20, 20),
                     "scan_angle": math.radians(60) if is_boss else math.radians(40),
-                    "scan_range": 300 if is_boss else 220,
+                    "scan_range": 360 if is_boss else 220,
                     "facing": random.random() * math.pi * 2,
                     "detect_count": 0,
                     "scan_timer": 0.0,
-                    "detect_cooldown": 3.0,
+                    "detect_cooldown": 0.0,
+                    "chasing": False,
+                    "lost_timer": 0.0,
                     "target": None,
-                    "max_speed": 60.0 if is_boss else 80.0,
-                    "accel": 200.0 if is_boss else 160.0,
-                    "turn_rate": math.radians(120) if is_boss else math.radians(180),
+                    "max_speed": 120.0 if is_boss else 100.0,
+                    "accel": 240.0 if is_boss else 160.0,
+                    "turn_rate": math.radians(360) if is_boss else math.radians(180),
                     "is_boss": is_boss,
                     "loot_given": False,
                 }
                 if is_boss:
-                    state.update({"hp": 3500, "laser_damage": 50, "laser_cooldown": 0.0})
+                    state.update({"hp": 3500, "laser_damage": 50, "laser_cooldown": 0.0, "laser_range": 240})
                 drones.append(state)
 
                                                                                      
@@ -892,6 +905,9 @@ def init_drones():
         drones.append(state)
 
 def update_drones(dt):
+    # update_drones runs every frame and moves each drone
+    # they pick random targets and sweep a red cone to look for the player
+    # when a drone sees you normal ones spawn reinforcements and boss drones shoot lasers
     """Update all drones: movement, scanning, and deployment when player detected."""
     dt_sec = dt / 1000.0
     room_key = tuple(current_room)
@@ -901,7 +917,8 @@ def update_drones(dt):
 
                                                             
                                                       
-        if not d.get("target") or random.random() < 0.004:
+        # only pick a random roaming target when not currently chasing the player
+        if (not d.get("target") or random.random() < 0.004) and not d.get("chasing"):
             angle = random.random() * math.pi * 2
             r = random.uniform(40, 140)
             tx = d["x"] + math.cos(angle) * r
@@ -955,6 +972,9 @@ def update_drones(dt):
 
                                                          
         d["scan_timer"] += dt_sec * 1.5
+        # tick down laser cooldown separately
+        if d.get("is_boss"):
+            d["laser_cooldown"] = max(0.0, d.get("laser_cooldown", 0.0) - dt_sec)
 
                                                           
                                   
@@ -966,14 +986,68 @@ def update_drones(dt):
             angle_to_player = math.atan2(dy, dx)
             diff = (angle_to_player - d["facing"] + math.pi) % (2*math.pi) - math.pi
             if abs(diff) <= d["scan_angle"]/2:
-                                                  
-                if d.get("detect_cooldown", 0.0) <= 0.0:
-                    d["detect_count"] += 1
-                    # spawn 2-3 enemies per detection
-                    spawn_count = random.randint(2, 3)
-                    deploy_enemies_from_drone(d, spawn_count)
-                    # set 1 second cooldown before next detection
-                    d["detect_cooldown"] = 1.0
+                # if boss then engage chase behavior rather than spawning reinforcements
+                if d.get("is_boss"):
+                    d["chasing"] = True
+                    d["lost_timer"] = 0.0
+                    # set target to player center so drone will pursue
+                    d["target"] = (player.centerx - d.get("w",0)/2, player.centery - d.get("h",0)/2)
+                    # if close enough and laser ready then fire a volley of fast blue orbs
+                    if dist <= d.get("laser_range", 240) and d.get("laser_cooldown", 0.0) <= 0.0:
+                        # spawn a row of blue projectiles aimed at the player like the main boss
+                        try:
+                            global bullets
+                            # compute normalized direction toward player
+                            ang = math.atan2(dy, dx)
+                            base_dx = math.cos(ang)
+                            base_dy = math.sin(ang)
+                            # perpendicular vector for row offsets
+                            perp_x = -base_dy
+                            perp_y = base_dx
+                            # row offsets in pixels from center
+                            offsets = [-80, -40, -10, 20, 50]
+                            speed = 32.0
+                            dmg = d.get("laser_damage", 50)
+                            for off in offsets:
+                                bx = float(d["x"] + d.get("w",0)/2 + perp_x * off)
+                                by = float(d["y"] + d.get("h",0)/2 + perp_y * off)
+                                bullets.append({
+                                    "x": bx,
+                                    "y": by,
+                                    "dx": base_dx * speed,
+                                    "dy": base_dy * speed,
+                                    "damage": dmg,
+                                    "is_laser": True,
+                                    "hostile": True,
+                                    "color_main": (80, 160, 255),
+                                    "color_inner": (160, 200, 255),
+                                    "radius": 6
+                                })
+                        except Exception:
+                            pass
+                        set_message("Drone fires a volley", (150, 200, 255), 1.6)
+                        d["laser_cooldown"] = 2.0
+                else:
+                    if d.get("detect_cooldown", 0.0) <= 0.0:
+                        d["detect_count"] += 1
+                        # spawn 2-3 enemies per detection
+                        spawn_count = random.randint(2, 3)
+                        deploy_enemies_from_drone(d, spawn_count)
+                        # set 1 second cooldown before next detection
+                        d["detect_cooldown"] = 1.0
+
+        # if the boss is chasing update its target each frame to track the player
+        if d.get("is_boss") and d.get("chasing"):
+            # update target to follow player center
+            d["target"] = (player.centerx - d.get("w",0)/2, player.centery - d.get("h",0)/2)
+            # if player is outside detection cone increment lost timer
+            if dist > d["scan_range"] or abs(diff) > d["scan_angle"]/2:
+                d["lost_timer"] = d.get("lost_timer", 0.0) + dt_sec
+            else:
+                d["lost_timer"] = 0.0
+            # if lost for more than 3 seconds stop chasing
+            if d.get("lost_timer", 0.0) > 3.0:
+                d["chasing"] = False
 
 def draw_drones(surface):
     """Draw drones for current room with radar triangle sweep."""
@@ -1042,6 +1116,9 @@ def deploy_enemies_from_drone(drone, count):
 
 
 def _init_timebandits():
+    # setup time bandit spawns in configured rooms
+    # this builds room state that tracks active waves and respawn timers
+    # useful so the drone system can deploy them later
     """Prepare time-bandit wave state for configured rooms."""
     for room_key, waves in TIMEBANDIT_WAVES.items():
         timebandit_rooms[room_key] = {
@@ -1052,6 +1129,10 @@ def _init_timebandits():
             "key_given": False,
         }
 
+
+# room_data holds layout for all rooms objects npcs and items
+# this is a big dictionary that defines what each room contains
+# keep it organised so we can find places to add items or npcs
 _init_timebandits()
 
                                                                        
@@ -1297,6 +1378,9 @@ _init_goblins()
 
 
 def _init_npc_states():
+    # initialize npc_states so every npc gets a runtime entry
+    # this lets npcs roam and pause when you talk to them
+    # we use a unique key so duplicated npc types dont collide
     """Initialize dynamic npc state entries for every NPC in room_data.
     Keys: "level_row_col_id_index" to uniquely identify duplicates.
     """
@@ -1787,6 +1871,9 @@ def enter_level_3():
     """Warp player to Level-3 (placeholder) - basic setup for next level.
     This preserves the player's gold and keycards but resets some level-appropriate state.
     """
+    # enter_level_3 moves the player to the next big area
+    # it keeps some important items like gold keycards and time shards
+    # other progress is reset so the level feels new
     global current_room, player, health, max_health, weapon_level, armor_level
     global has_weapon, ammo, max_ammo, inventory, quests
     global collected_gold, collected_herbs, collected_potions, collected_keys, collected_timeshards
@@ -2318,6 +2405,9 @@ def shoot_bullet():
     return False
 
 def update_bullets(dt):
+    # update_bullets moves bullets and checks if they hit enemies or drones
+    # bullets travel fast and we remove them when they go offscreen
+    # bullets can damage goblins timebandits and even the drone boss
     """Update bullet positions and check collisions."""
     global bullets
     
@@ -2331,6 +2421,20 @@ def update_bullets(dt):
             bullet["y"] < 0 or bullet["y"] > ROOM_HEIGHT):
             bullets_to_remove.append(i)
             continue
+
+        # hostile bullets should damage the player
+        if bullet.get("hostile"):
+            br = int(bullet.get("radius", 4))
+            bullet_rect = pygame.Rect(bullet["x"] - br, bullet["y"] - br, br * 2, br * 2)
+            if player.colliderect(bullet_rect):
+                try:
+                    global health
+                    health = max(0, health - int(bullet.get("damage", 0)))
+                except Exception:
+                    pass
+                set_message(f"Hit for {int(bullet.get('damage',0))} damage", (255, 100, 100), 1.2)
+                bullets_to_remove.append(i)
+                continue
 
        
         room_key = tuple(current_room)
@@ -2953,6 +3057,9 @@ def get_collected_set(item_type):
     return set()
 
 def draw_room(surface, level, row, col):
+    # draw_room paints the current room and places objects and npcs
+    # it resets lists like colliders and items then rebuilds them from room_data
+    # this is called every frame so keep it relatively fast
     """Draw the current room using images only."""
     global colliders, gold_items, herbs, potions, npcs, interactive_objects, damage_zones
 
@@ -4106,6 +4213,9 @@ def update_timebandits(dt):
                 tb["sword_rect"] = None
 
 def pickup_items():
+    # pickup_items handles when the player walks over things in the room
+    # gold herbs potions keys keycards and timeshards are processed here
+    # sometimes this logic had bugs so we try to be defensive and not crash
     """Handle item collection."""
     global message, message_timer, message_color, health, player_speed_boost_timer
     
@@ -4199,6 +4309,9 @@ def set_message(text, color, duration):
     message, message_color, message_timer = text, color, duration
 
 def handle_interaction():
+    # handle_interaction is called when the player presses the interact key
+    # it looks for nearby npcs objects and opens menus or starts quests
+    # this is where dialogues shops and puzzles are triggered
     """Handle F key interactions."""
     global dialogue_active, current_dialogue, dialogue_index, upgrade_shop_visible
     global safe_visible, safe_input, safe_unlocked, maze_visible, cyber_shop_visible
@@ -4407,6 +4520,8 @@ except Exception:
     pass
 
                                                                 
+    # main loop runs until the window is closed
+    # it processes input updates game state and draws everything
 while running:
     dt = clock.tick(60)
     keys_pressed = pygame.key.get_pressed()
