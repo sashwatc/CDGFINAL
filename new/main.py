@@ -3818,7 +3818,7 @@ def handle_interaction():
                             dialogue_active = True
                             dialogue_index = 0
 
-                            if npc.get("rescued", False) and not quests["rescue_knight"]["complete"]:
+                            if npc.get("rescued", False) and quests.get("rescue_knight", {}).get("complete") == False:
                                 quests["rescue_knight"]["complete"] = True
                                 quests["defeat_goblin_king"]["active"] = True
                                 set_message("Knight Rescued!", (0, 255, 0), 2.0)
@@ -3831,8 +3831,12 @@ def handle_interaction():
                             dialogue_index = 0
 
                             # Quest completion for elder
-                            if npc["id"] == "elder" and not quests["talk_to_elder"]["complete"]:
+                            if npc["id"] == "elder" and quests.get("talk_to_elder", {}).get("complete") == False:
+                                if "talk_to_elder" not in quests:
+                                    quests["talk_to_elder"] = {"active": True, "complete": False, "description": "Talk to Elder Rowan"}
                                 quests["talk_to_elder"]["complete"] = True
+                                if "buy_weapon" not in quests:
+                                    quests["buy_weapon"] = {"active": True, "complete": False, "description": "Buy a weapon from the Blacksmith"}
                                 quests["buy_weapon"]["active"] = True
                                 set_message("Quest Updated! Visit the blacksmith.", (0, 255, 0), 2.0)
                             # Special cyber guide in Level 2: give time bandits quest
