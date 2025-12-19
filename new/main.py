@@ -4152,15 +4152,21 @@ def pickup_items():
 
                                                               
             elif itype == "keycard" and key_tuple not in collected_keys:
-                collected_keys.add(key_tuple)
-                                                                   
                 try:
-                    room_info["items"].remove(item)
+                    collected_keys.add(key_tuple)
+                    # Remove the keycard from the room so it disappears
+                    try:
+                        room_info["items"].remove(item)
+                    except Exception:
+                        pass
+                    # Track keycard collection and reward the player
+                    inventory["Keycards"] = inventory.get("Keycards", 0) + 1
+                    inventory["Gold"] += 50
+                    set_message(f"+1 Keycard (Total: {inventory.get('Keycards',0)}) +50 Gold", (255, 215, 0), 2.5)
                 except Exception:
-                    pass
-                # Reward the player for collecting the keycard
-                inventory["Gold"] += 50
-                set_message(f"+1 Keycard (Total: {inventory['Keycards']}) +50 Gold", (255, 215, 0), 2.5)
+                    tb = traceback.format_exc()
+                    print("Error handling keycard pickup:\n", tb)
+                    set_message("Error picking up keycard (see console).", (255, 100, 100), 3.0)
                 break
 
                                                  
