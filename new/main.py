@@ -11,6 +11,11 @@ import random
 # core game loop for Chronicles of Time: handles movement, combat, UI, and progression.
 
 pygame.init()
+# Initialize mixer separately to avoid crashes if audio device is missing
+try:
+    pygame.mixer.init()
+except Exception:
+    pass
 os.chdir(os.path.dirname(__file__) if __file__ else os.getcwd())
 
 #  game constants
@@ -54,8 +59,11 @@ damage_zones = []
 damage_timer = 0.0
 DAMAGE_INTERVAL = 1.0  
 
-#  player setup
-player = pygame.Rect(400, 400, 60, 75) 
+#  player setup (ultra-small hitbox for maximum squeezing past obstacles)
+player = pygame.Rect(400, 400, 20, 25) 
+# render size can be larger than hitbox so the player appears bigger on screen
+PLAYER_RENDER_WIDTH = 80
+PLAYER_RENDER_HEIGHT = 100
 player_speed = 7
 current_room = [0, 0, 0]
 previous_room = tuple(current_room)
@@ -167,7 +175,44 @@ ARMOR_MAX_LEVEL = 5
     
 #  simple image loading with caching and placeholders
 ASSETS_DIR = "assets"
+SOUNDS_DIR = os.path.join(ASSETS_DIR, "sounds")
 image_cache = {}
+sound_cache = {}
+
+def load_sound(name):
+    """Load a sound if it exists (tries wav/mp3/ogg), otherwise return None (safe no-op)."""
+    candidates = []
+    root, ext = os.path.splitext(name)
+    if ext:
+        candidates.append(name)
+    else:
+        candidates.extend([f"{root}.wav", f"{root}.mp3", f"{root}.ogg"])
+    for candidate in candidates:
+        path = os.path.join(SOUNDS_DIR, candidate)
+        if not os.path.exists(path):
+            continue
+        cache_key = candidate
+        if cache_key in sound_cache:
+            return sound_cache[cache_key]
+        try:
+            snd = pygame.mixer.Sound(path)
+            sound_cache[cache_key] = snd
+            return snd
+        except Exception:
+            continue
+    return None
+
+def play_sound(snd):
+    """Play a sound safely."""
+    if snd:
+        try:
+            snd.play()
+        except Exception:
+            pass
+
+# pre-load core sounds after helpers exist
+GUNSHOT_SOUND = load_sound("gunshot")
+LASER_SOUND = load_sound("laser")
 
 def _placeholder_color(name: str):
     """Pick a sensible placeholder color based on asset name."""
@@ -316,7 +361,7 @@ def _load_player_sheet(filename):
     for i in range(cols):
         frame_rect = pygame.Rect(i * frame_width, 0, frame_width, frame_height)
         frame = sheet.subsurface(frame_rect).copy()
-        frame = pygame.transform.scale(frame, (player.width, player.height))
+        frame = pygame.transform.scale(frame, (PLAYER_RENDER_WIDTH, PLAYER_RENDER_HEIGHT))
         frames.append(frame)
     return frames
 
@@ -331,7 +376,7 @@ def _ensure_player_frames():
     
     # fall back to old single sprite if sheets fail to load
     if not idle_frames:
-        idle_frames = [load_image("characters/player_right.png", player.width, player.height)]
+        idle_frames = [load_image("characters/player_right.png", PLAYER_RENDER_WIDTH, PLAYER_RENDER_HEIGHT)]
     if not run_frames:
         run_frames = idle_frames
     
@@ -348,7 +393,7 @@ def load_player_image(direction="right"):
     _ensure_player_frames()
     key = f"idle_{direction}"
     frames = player_anim_frames.get(key) or []
-    return frames[0] if frames else load_image(f"characters/player_{direction}.png", player.width, player.height)
+    return frames[0] if frames else load_image(f"characters/player_{direction}.png", PLAYER_RENDER_WIDTH, PLAYER_RENDER_HEIGHT)
 
 def load_object_image(obj_type, width, height):
     return load_image(f"objects/{obj_type}.png", width, height)
@@ -674,7 +719,7 @@ room_data = {
         "objects": [
             {"type": "invisible", "x": 110, "y": 100, "width": 140, "height": 600},
             {"type": "invisible", "x": 570, "y": 100, "width": 140, "height": 600},
-            {"type": "invisible", "x": 290, "y": 100, "width": 240, "height": 170},
+            {"type": "invisible", "x": 310, "y": 100, "width": 200, "height": 170},
         ],
         "interactive": [],
         "npcs": [
@@ -1823,6 +1868,13 @@ def shoot_bullet():
             ammo -= 1
             shoot_cooldown = current_cooldown
             
+            # level-based gunshot audio: medieval (level 0) uses gunshot, cyber (level 1) uses laser
+            level_id = current_room[0] if current_room else 0
+            if level_id == 1:
+                play_sound(LASER_SOUND)
+            else:
+                play_sound(GUNSHOT_SOUND)
+            
             if is_laser_weapon:
                 set_message("Pew! Laser!", (0, 255, 255), 0.3)
             else:
@@ -2297,7 +2349,8 @@ def draw_player(surface, player_rect, dt, moving):
     frames = _player_frame_for_state(state, direction)
     if not frames:
         img = load_player_image(direction)
-        surface.blit(img, (player_rect.x, player_rect.y))
+        img_rect = img.get_rect(center=player_rect.center)
+        surface.blit(img, img_rect)
         return
     
     if state != player_anim_state:
@@ -2315,7 +2368,8 @@ def draw_player(surface, player_rect, dt, moving):
         player_anim_timer = 0.0
     
     frame = frames[player_anim_index % len(frames)]
-    surface.blit(frame, (player_rect.x, player_rect.y))
+    frame_rect = frame.get_rect(center=player_rect.center)
+    surface.blit(frame, frame_rect)
 
 def draw_player_pointer(surface, player_rect):
     """Draw a small pointer anchored to the player's left side."""
