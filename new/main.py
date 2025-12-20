@@ -23,15 +23,15 @@ os.chdir(os.path.dirname(__file__) if __file__ else os.getcwd())
 # small note sometimes audio fails on some systems but game still runs
                  
 #  game constants
-ROOM_WIDTH = 800    
-ROOM_HEIGHT = 800
-GRID_WIDTH = 3
-GRID_HEIGHT = 3
-LEVELS = 3
-DEV_MODE = True # this is for debugging and adding invisible barriers so that we can see where they are
-DEV_SKIP_TO_LEVEL_2 = True  
+SCREEN_WIDTH = 800    
+SCREEN_HEIGHT = 800
+MAP_COLS = 3
+MAP_ROWS = 3
+TOTAL_LEVELS = 3
+DEBUG_MODE = True # this is for debugging and adding invisible barriers so that we can see where they are
+DEBUG_SKIP_LEVEL2 = True  
 # Level 2 spawn point (consistent spawn when entering Level 2)
-LEVEL2_SPAWN = (ROOM_WIDTH // 2, ROOM_HEIGHT // 2)
+LEVEL2_SPAWN_POINT = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
 # ------------ LEVEL 2 (CYBERPUNK) ------------
                                                
 LEVEL_2_NAME = "The Neon City (Cyberpunk Future)"
@@ -47,54 +47,54 @@ LEVEL_2_BG_MAP = {
     (2,2): "ai_control_room",
 }
         
-screen = pygame.display.set_mode((ROOM_WIDTH, ROOM_HEIGHT))
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Chronicles of Time")
 clock = pygame.time.Clock()
 font = pygame.font.SysFont(None, 30)
 title_font = pygame.font.SysFont(None, 70)
 small_font = pygame.font.SysFont(None, 24)
 button_font = pygame.font.SysFont(None, 40)
-POINTER_COLOR = (255, 215, 0)
-POINTER_SIZE = 12
-POINTER_OFFSET_X = -20
+AIM_POINTER_COLOR = (255, 215, 0)
+AIM_POINTER_SIZE = 12
+AIM_POINTER_OFFSET_X = -20
 
 
               
-damage_zones = []
-damage_timer = 0.0
-DAMAGE_INTERVAL = 1.0  
+hazard_zones = []
+hazard_timer = 0.0
+HAZARD_TICK_INTERVAL = 1.0  
 
                                                                          
-player = pygame.Rect(400, 400, 20, 25) 
+player_rect = pygame.Rect(400, 400, 20, 25) 
                                                                               
-PLAYER_RENDER_WIDTH = 80
-PLAYER_RENDER_HEIGHT = 100
-player_speed = 7
-current_room = [0, 0, 0]
-previous_room = tuple(current_room)
-player_direction = "right"  
+PLAYER_SPRITE_WIDTH = 80
+PLAYER_SPRITE_HEIGHT = 100
+player_move_speed = 7
+current_room_coords = [0, 0, 0]
+previous_room_coords = tuple(current_room_coords)
+player_facing = "right"  
 PLAYER_ANIM_SPEED = 0.08                                 
-player_anim_frames = {}
-player_anim_state = "idle"
-player_anim_index = 0
-player_anim_timer = 0.0
+player_frames = {}
+player_state = "idle"
+player_frame_index = 0
+player_frame_timer = 0.0
                
-bullets = []
-ammo = 0  
-max_ammo = 30
-reload_time = 0.0
-is_reloading = False
-player_angle = 0.0
-shoot_cooldown = 0.0
-has_weapon = False  
+active_bullets = []
+current_ammo = 0  
+max_ammo_count = 30
+reload_timer = 0.0
+reloading_active = False
+player_aim_angle = 0.0
+shoot_cooldown_timer = 0.0
+player_has_weapon = False  
 
 
-is_laser_weapon = False 
-laser_cooldown = 0.0  
-LASER_COOLDOWN_TIME = 0.1  
-REGULAR_COOLDOWN_TIME = 0.2  
+using_laser_weapon = False 
+laser_cooldown_timer = 0.0  
+LASER_COOLDOWN_SECONDS = 0.1  
+SHOT_COOLDOWN_SECONDS = 0.2  
                                                                             
-ammo_packs_bought = {0: 0, 1: 0}
+ammo_packs_purchased = {0: 0, 1: 0}
                                                 
 MAX_AMMO_PACKS = 5
 
@@ -349,12 +349,12 @@ def load_smart_bg(level, row, col):
         }
         room_type = background_mapping.get((level, row, col))
         if room_type:
-            return load_image(f"backgrounds/{room_type}.png", ROOM_WIDTH, ROOM_HEIGHT)
+            return load_image(f"backgrounds/{room_type}.png", SCREEN_WIDTH, SCREEN_HEIGHT)
         return None
     elif level == 1:                                        
         filename = LEVEL_2_BG_MAP.get((row, col))
         if filename:
-            return load_image(f"backgrounds/{filename}.png", ROOM_WIDTH, ROOM_HEIGHT)
+            return load_image(f"backgrounds/{filename}.png", SCREEN_WIDTH, SCREEN_HEIGHT)
         return None
     return None
 
@@ -376,39 +376,39 @@ def _load_player_sheet(filename):
     for i in range(cols):
         frame_rect = pygame.Rect(i * frame_width, 0, frame_width, frame_height)
         frame = sheet.subsurface(frame_rect).copy()
-        frame = pygame.transform.scale(frame, (PLAYER_RENDER_WIDTH, PLAYER_RENDER_HEIGHT))
+        frame = pygame.transform.scale(frame, (PLAYER_SPRITE_WIDTH, PLAYER_SPRITE_HEIGHT))
         frames.append(frame)
     return frames
 
 def _ensure_player_frames():
     """Load and cache player idle/run animations (left/right)."""
-    global player_anim_frames
-    if player_anim_frames:
-        return player_anim_frames
+    global player_frames
+    if player_frames:
+        return player_frames
     
     idle_frames = _load_player_sheet("Idle.png")
     run_frames = _load_player_sheet("Run.png")
     
                                                            
     if not idle_frames:
-        idle_frames = [load_image("characters/player_right.png", PLAYER_RENDER_WIDTH, PLAYER_RENDER_HEIGHT)]
+        idle_frames = [load_image("characters/player_right.png", PLAYER_SPRITE_WIDTH, PLAYER_SPRITE_HEIGHT)]
     if not run_frames:
         run_frames = idle_frames
     
-    player_anim_frames = {
+    player_frames = {
         "idle_right": idle_frames,
         "idle_left": [pygame.transform.flip(f, True, False) for f in idle_frames],
         "run_right": run_frames,
         "run_left": [pygame.transform.flip(f, True, False) for f in run_frames],
     }
-    return player_anim_frames
+    return player_frames
 
 def load_player_image(direction="right"):
     """Load player sprite based on direction (only left/right supported)."""
     _ensure_player_frames()
     key = f"idle_{direction}"
-    frames = player_anim_frames.get(key) or []
-    return frames[0] if frames else load_image(f"characters/player_{direction}.png", PLAYER_RENDER_WIDTH, PLAYER_RENDER_HEIGHT)
+    frames = player_frames.get(key) or []
+    return frames[0] if frames else load_image(f"characters/player_{direction}.png", PLAYER_SPRITE_WIDTH, PLAYER_SPRITE_HEIGHT)
 
 def load_object_image(obj_type, width, height):
     return load_image(f"objects/{obj_type}.png", width, height)
@@ -565,11 +565,11 @@ def handle_cipher_key(event):
         if cipher_input.strip().lower() == cipher_plain.lower():
             cipher_visible = False
                                                                 
-            room_key = tuple(current_room)
+            room_key = tuple(current_room_coords)
             room_info = room_data.get(room_key, {})
                                                          
-            keycard_x = ROOM_WIDTH - 100
-            keycard_y = ROOM_HEIGHT // 2
+            keycard_x = SCREEN_WIDTH - 100
+            keycard_y = SCREEN_HEIGHT // 2
             room_info.setdefault("items", []).append({"type": "keycard", "x": keycard_x, "y": keycard_y, "id": f"keycard_datahub_{room_key[1]}_{room_key[2]}"})
             set_message("Correct! A Keycard has been spawned in the Data Hub.", (0, 255, 0), 3.0)
         else:
@@ -612,12 +612,12 @@ def handle_compiler_key(event):
             compiler_quest_active = False
             compiler_quest_completed = True
                                                               
-            room_key = tuple(current_room)
+            room_key = tuple(current_room_coords)
                                                
             if room_key == (1, 1, 2):
                 room_info = room_data.get(room_key, {})
-                key_x = player.centerx + 30
-                key_y = player.centery
+                key_x = player_rect.centerx + 30
+                key_y = player_rect.centery
                 room_info.setdefault("items", []).append({"type": "keycard", "x": key_x, "y": key_y, "id": f"keycard_compiler_{room_key[1]}_{room_key[2]}"})
             set_message("Correct! Keycard spawned near you.", (0, 255, 0), 3.0)
         else:
@@ -634,11 +634,11 @@ def draw_compiler_ui(surface):
     """Render a simple code-editor style overlay for the mini-quest."""
     global compiler_input, compiler_cursor_timer, compiler_cursor_visible
                                  
-    overlay = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 200))
     surface.blit(overlay, (0, 0))
 
-    box = pygame.Rect(120, 120, ROOM_WIDTH - 240, ROOM_HEIGHT - 240)
+    box = pygame.Rect(120, 120, SCREEN_WIDTH - 240, SCREEN_HEIGHT - 240)
     pygame.draw.rect(surface, (30, 30, 40), box)
     pygame.draw.rect(surface, (255, 215, 0), box, 2)
 
@@ -691,13 +691,13 @@ maze_layout = [
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 ]
 
-race_visible = False
-race_completed = False
-race_checkpoint_hit = False
-race_timer = 0.0
-race_time_limit = 35.0
-race_offtrack_timer = 0.0
-race_car = {"x": 0.0, "y": 0.0, "w": 22, "h": 12, "speed": 220.0}
+race_active = False
+race_finished = False
+race_checkpoint_reached = False
+race_elapsed = 0.0
+race_time_limit_sec = 35.0
+race_warning_timer = 0.0
+race_car_state = {"x": 0.0, "y": 0.0, "w": 22, "h": 12, "speed": 220.0}
 RACE_TRACK_BG = "backgrounds/racetrack.png"
 # Edit these to match obstacles in the track image (x, y, w, h).
 RACE_BOUNDARY_BOXES = [
@@ -708,37 +708,37 @@ RACE_BOUNDARY_BOXES = [
 def _race_track_rects():
     outer = pygame.Rect(140, 120, 520, 560)
     inner = outer.inflate(-240, -240)
-    start_line = pygame.Rect(ROOM_WIDTH // 2 - 70, outer.bottom - 24, 140, 12)
-    checkpoint = pygame.Rect(ROOM_WIDTH // 2 - 70, outer.top + 12, 140, 12)
+    start_line = pygame.Rect(SCREEN_WIDTH // 2 - 70, outer.bottom - 24, 140, 12)
+    checkpoint = pygame.Rect(SCREEN_WIDTH // 2 - 70, outer.top + 12, 140, 12)
     return outer, inner, start_line, checkpoint
 
 def _race_boundary_rects():
     return [pygame.Rect(x, y, w, h) for x, y, w, h in RACE_BOUNDARY_BOXES]
 
 def _reset_race_car():
-    global race_car, race_checkpoint_hit
+    global race_car_state, race_checkpoint_reached
     outer, inner, start_line, checkpoint = _race_track_rects()
-    race_car["x"] = start_line.centerx - race_car["w"] / 2
-    race_car["y"] = start_line.centery - race_car["h"] / 2 - 6
-    race_checkpoint_hit = False
+    race_car_state["x"] = start_line.centerx - race_car_state["w"] / 2
+    race_car_state["y"] = start_line.centery - race_car_state["h"] / 2 - 6
+    race_checkpoint_reached = False
 
 def start_race_minigame():
-    global race_visible, race_timer, race_completed, race_offtrack_timer
-    race_visible = True
-    race_completed = False
-    race_timer = 0.0
-    race_offtrack_timer = 0.0
+    global race_active, race_elapsed, race_finished, race_warning_timer
+    race_active = True
+    race_finished = False
+    race_elapsed = 0.0
+    race_warning_timer = 0.0
     _reset_race_car()
     set_message("Rail Race: Hit the top checkpoint, then cross the start line!", (120, 220, 255), 3.0)
 
 def update_race_minigame(dt, keys_pressed):
-    global race_timer, race_visible, race_checkpoint_hit, race_offtrack_timer
-    if not race_visible:
+    global race_elapsed, race_active, race_checkpoint_reached, race_warning_timer
+    if not race_active:
         return
     dt_sec = dt / 1000.0
-    race_timer += dt_sec
-    if race_timer >= race_time_limit:
-        race_visible = False
+    race_elapsed += dt_sec
+    if race_elapsed >= race_time_limit_sec:
+        race_active = False
         set_message("Race timed out. Try again!", (255, 160, 120), 2.0)
         return
 
@@ -749,43 +749,43 @@ def update_race_minigame(dt, keys_pressed):
         if norm != 0:
             move_x /= norm
             move_y /= norm
-        race_car["x"] += move_x * race_car["speed"] * dt_sec
-        race_car["y"] += move_y * race_car["speed"] * dt_sec
+        race_car_state["x"] += move_x * race_car_state["speed"] * dt_sec
+        race_car_state["y"] += move_y * race_car_state["speed"] * dt_sec
 
-    car_rect = pygame.Rect(int(race_car["x"]), int(race_car["y"]), race_car["w"], race_car["h"])
+    car_rect = pygame.Rect(int(race_car_state["x"]), int(race_car_state["y"]), race_car_state["w"], race_car_state["h"])
     outer, inner, start_line, checkpoint = _race_track_rects()
     for boundary in _race_boundary_rects():
         if car_rect.colliderect(boundary):
-            race_visible = False
+            race_active = False
             set_message("Crashed! Race failed.", (255, 120, 120), 2.0)
             return
 
     if not outer.contains(car_rect) or inner.colliderect(car_rect):
-        race_visible = False
+        race_active = False
         set_message("Off the road! Race failed.", (255, 120, 120), 2.0)
         return
 
-    if race_offtrack_timer > 0.0:
-        race_offtrack_timer = max(0.0, race_offtrack_timer - dt_sec)
+    if race_warning_timer > 0.0:
+        race_warning_timer = max(0.0, race_warning_timer - dt_sec)
 
     if car_rect.colliderect(checkpoint):
-        race_checkpoint_hit = True
+        race_checkpoint_reached = True
 
-    if race_checkpoint_hit and car_rect.colliderect(start_line):
-        race_visible = False
+    if race_checkpoint_reached and car_rect.colliderect(start_line):
+        race_active = False
         set_message("Race complete! Nice driving.", (120, 255, 160), 2.5)
 
 def draw_race_minigame(surface):
-    if not race_visible:
+    if not race_active:
         return
-    track_bg = load_image(RACE_TRACK_BG, ROOM_WIDTH, ROOM_HEIGHT)
+    track_bg = load_image(RACE_TRACK_BG, SCREEN_WIDTH, SCREEN_HEIGHT)
     surface.blit(track_bg, (0, 0))
-    overlay = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 40))
     surface.blit(overlay, (0, 0))
 
     outer, inner, start_line, checkpoint = _race_track_rects()
-    if DEV_MODE:
+    if DEBUG_MODE:
         pygame.draw.rect(surface, (120, 120, 160), outer, 2)
         pygame.draw.rect(surface, (60, 60, 80), inner, 2)
         for boundary in _race_boundary_rects():
@@ -794,17 +794,17 @@ def draw_race_minigame(surface):
     pygame.draw.rect(surface, (255, 255, 255), start_line)
     pygame.draw.rect(surface, (120, 200, 255), checkpoint)
 
-    car_rect = pygame.Rect(int(race_car["x"]), int(race_car["y"]), race_car["w"], race_car["h"])
+    car_rect = pygame.Rect(int(race_car_state["x"]), int(race_car_state["y"]), race_car_state["w"], race_car_state["h"])
     pygame.draw.rect(surface, (255, 80, 80), car_rect)
     pygame.draw.rect(surface, (255, 220, 220), car_rect, 2)
 
     title = font.render("Rail Race", True, (220, 240, 255))
-    surface.blit(title, (ROOM_WIDTH // 2 - title.get_width() // 2, 40))
+    surface.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 40))
     instr = small_font.render("Arrow keys or WASD to drive. Hit blue checkpoint, then cross white line.", True, (200, 200, 220))
-    surface.blit(instr, (ROOM_WIDTH // 2 - instr.get_width() // 2, 70))
-    timer_left = max(0.0, race_time_limit - race_timer)
+    surface.blit(instr, (SCREEN_WIDTH // 2 - instr.get_width() // 2, 70))
+    timer_left = max(0.0, race_time_limit_sec - race_elapsed)
     timer_text = small_font.render(f"Time: {timer_left:.1f}s", True, (255, 220, 160))
-    surface.blit(timer_text, (ROOM_WIDTH // 2 - timer_text.get_width() // 2, 96))
+    surface.blit(timer_text, (SCREEN_WIDTH // 2 - timer_text.get_width() // 2, 96))
               
 boss = None
 boss_health = 0
@@ -836,9 +836,9 @@ give_herbs_active = False
 cyber_shop_visible = False   
 
            
-message = ""
-message_timer = 0.0
-message_color = (255, 255, 255)
+hud_message = ""
+hud_message_timer = 0.0
+hud_message_color = (255, 255, 255)
 
                 
 # npc dialogue lines for characters in rooms
@@ -846,55 +846,55 @@ message_color = (255, 255, 255)
 # written in a plain human style so you can edit easily
 npc_dialogues = {
     (0, 0, 0, "elder"): [
-        "Elder Rowan: Welcome, brave Arin!",
-        "Elder Rowan: The Time Shards have been scattered across eras.",
-        "Elder Rowan: You'll need protection for your journey.",
-        "Elder Rowan: Visit the Blacksmith to the east - he can sell you a weapon.",
-        "Elder Rowan: A basic firearm costs 20 gold pieces.",
-        "Elder Rowan: He also offers armor and weapon upgrades for your journey.",
+        "Elder Rowan: Welcome, Arin. You've arrived just in time.",
+        "Elder Rowan: The Time Shards are scattered across eras.",
+        "Elder Rowan: You'll need protection for what's ahead.",
+        "Elder Rowan: Head east to the Blacksmith; he can arm you.",
+        "Elder Rowan: A basic firearm costs 20 gold.",
+        "Elder Rowan: He also sells armor and weapon upgrades.",
         "Quest Updated: Visit the Blacksmith to buy a weapon"
     ],
     (0, 1, 0, "knight"): [  
-        "Knight Aelric: Please, help me! I'm trapped in this cage!",
+        "Knight Aelric: Please help! I'm trapped in this cage!",
         "Knight Aelric: The goblins captured me after the battle.",
-        "Knight Aelric: There's a lock mechanism on the cage - can you solve it?",
+        "Knight Aelric: The lock is tricky - can you solve it?",
         "Hint: Interact with the cage to try the lock puzzle"
     ],
     (0, 1, 0, "knight_rescued"): [  
-        "Knight Aelric: Thank you for rescuing me!",
+        "Knight Aelric: Thank you for freeing me!",
         "Knight Aelric: The Goblin King holds the first Time Shard.",
-        "Knight Aelric: I dropped my key when they captured me - you should find it nearby.",
+        "Knight Aelric: I dropped my key when they took me - look nearby.",
         "Quest Updated: Defeat the Goblin King"
     ],
     (0, 2, 1, "herbcollector"): [
-        "Herb Collector: Ah, a traveler! I collect rare herbs from the forest.",
-        "Herb Collector: If you bring me 3 herbs, I can give you something useful.",
-        "Herb Collector: I know the combination to the safe in this room."
+        "Herb Collector: Ah, a traveler! I collect rare forest herbs.",
+        "Herb Collector: Bring me 3 herbs and I'll trade you something useful.",
+        "Herb Collector: I also know the safe combination in this room."
     ],
     (0, 2, 1, "herbcollector_with_herbs"): [
-        "Herb Collector: Wonderful! You found the herbs!",
-        "Herb Collector: As promised, here's the safe combination: 4231",
-        "Herb Collector: The safe contains something valuable for your journey.",
+        "Herb Collector: Wonderful - you found them!",
+        "Herb Collector: As promised, the safe combination is 4231.",
+        "Herb Collector: There's something valuable inside.",
         "Quest Updated: Safe combination received!"
     ],(1, 0, 0, "cyber_guide"): [
-        "Cyber Guide: Welcome to the Neon City, time traveler!",
-        "Cyber Guide: This is the year 2187 - technology has evolved.",
-        "Cyber Guide: You'll need advanced weapons here. Visit the Alley Market.",
-        "Cyber Guide: They sell laser weapons with rapid fire rates.",
-        "Cyber Guide: Be warned — Time Bandits have infested the Neon Streets and Core Reactor area.",
+        "Cyber Guide: Welcome to Neon City, time traveler.",
+        "Cyber Guide: It's the year 2187 - technology has surged.",
+        "Cyber Guide: You'll need advanced gear. Visit the Alley Market.",
+        "Cyber Guide: They sell laser weapons with rapid fire.",
+        "Cyber Guide: Be careful - Time Bandits control the Neon Streets and Core Reactor.",
         "Cyber Guide: Clear them out and return for a reward.",
         "Quest Updated: Buy a laser weapon from Neon Market"
     ],
     (1, 0, 1, "market_vendor"): [
-        "Market Vendor: Need some firepower, stranger?",
-        "Market Vendor: Our laser weapons fire 2x faster than old ballistic guns.",
-        "Market Vendor: They use energy cells instead of traditional ammo.",
+        "Market Vendor: Looking for firepower, stranger?",
+        "Market Vendor: Our laser weapons fire twice as fast as ballistic guns.",
+        "Market Vendor: They run on energy cells, not ammo.",
         "Market Vendor: The Neon Blaster is our best seller - 50 credits."
     ],
     (1, 2, 1, "time_guide"): [
         "Time Guide: Greetings, traveler of eras.",
-        "Time Guide: To open the gateway you must present 6 Keycards and 2 Time Shards.",
-        "Time Guide: Return when you have them and I can send you onward.",
+        "Time Guide: To open the gateway, present 6 Keycards and 2 Time Shards.",
+        "Time Guide: Return when you have them, and I will send you onward.",
     ],
 }
 
@@ -966,8 +966,8 @@ def init_drones():
                 is_boss = obj.get("type") == "drone_boss"
                 state = {
                     "room_key": tuple(room_key),
-                    "x": float(obj.get("x", ROOM_WIDTH//2)),
-                    "y": float(obj.get("y", ROOM_HEIGHT//2)),
+                    "x": float(obj.get("x", SCREEN_WIDTH//2)),
+                    "y": float(obj.get("y", SCREEN_HEIGHT//2)),
                     "w": obj.get("width", 160) if is_boss else obj.get("width", 48),
                     "h": obj.get("height", 160) if is_boss else obj.get("height", 48),
                     "vx": random.uniform(-20, 20),
@@ -999,8 +999,8 @@ def init_drones():
                                                                   
         state = {
             "room_key": factory_key,
-            "x": float(random.randint(80, ROOM_WIDTH - 80)),
-            "y": float(random.randint(80, ROOM_HEIGHT - 80)),
+            "x": float(random.randint(80, SCREEN_WIDTH - 80)),
+            "y": float(random.randint(80, SCREEN_HEIGHT - 80)),
             "w": 48,
             "h": 48,
             "vx": random.uniform(-20, 20),
@@ -1024,7 +1024,7 @@ def update_drones(dt):
     # when a drone sees you normal ones spawn reinforcements and boss drones shoot lasers
     """Update all drones: movement, scanning, and deployment when player detected."""
     dt_sec = dt / 1000.0
-    room_key = tuple(current_room)
+    room_key = tuple(current_room_coords)
     for d in drones:
         if tuple(d["room_key"]) != room_key:
             continue
@@ -1037,8 +1037,8 @@ def update_drones(dt):
             r = random.uniform(40, 140)
             tx = d["x"] + math.cos(angle) * r
             ty = d["y"] + math.sin(angle) * r
-            tx = max(20, min(ROOM_WIDTH - 20, tx))
-            ty = max(20, min(ROOM_HEIGHT - 20, ty))
+            tx = max(20, min(SCREEN_WIDTH - 20, tx))
+            ty = max(20, min(SCREEN_HEIGHT - 20, ty))
             d["target"] = (tx, ty)
 
         tx, ty = d.get("target") or (d["x"], d["y"])
@@ -1071,8 +1071,8 @@ def update_drones(dt):
         d["vy"] *= 0.995
 
                                 
-        d["x"] = max(10, min(ROOM_WIDTH - d["w"] - 10, d["x"] + d["vx"] * dt_sec))
-        d["y"] = max(10, min(ROOM_HEIGHT - d["h"] - 10, d["y"] + d["vy"] * dt_sec))
+        d["x"] = max(10, min(SCREEN_WIDTH - d["w"] - 10, d["x"] + d["vx"] * dt_sec))
+        d["y"] = max(10, min(SCREEN_HEIGHT - d["h"] - 10, d["y"] + d["vy"] * dt_sec))
 
                                                          
         speed = math.hypot(d["vx"], d["vy"])
@@ -1093,8 +1093,8 @@ def update_drones(dt):
                                                           
                                   
         d["detect_cooldown"] = max(0.0, d.get("detect_cooldown", 0.0) - dt_sec)
-        dx = player.centerx - (d["x"] + d["w"]/2)
-        dy = player.centery - (d["y"] + d["h"]/2)
+        dx = player_rect.centerx - (d["x"] + d["w"]/2)
+        dy = player_rect.centery - (d["y"] + d["h"]/2)
         dist = math.hypot(dx, dy)
         if dist <= d["scan_range"]:
             angle_to_player = math.atan2(dy, dx)
@@ -1105,12 +1105,12 @@ def update_drones(dt):
                     d["chasing"] = True
                     d["lost_timer"] = 0.0
                     # set target to player center so drone will pursue
-                    d["target"] = (player.centerx - d.get("w",0)/2, player.centery - d.get("h",0)/2)
+                    d["target"] = (player_rect.centerx - d.get("w",0)/2, player_rect.centery - d.get("h",0)/2)
                     # if close enough and laser ready then fire a volley of fast blue orbs
                     if dist <= d.get("laser_range", 240) and d.get("laser_cooldown", 0.0) <= 0.0:
                         # spawn a row of blue projectiles aimed at the player like the main boss
                         try:
-                            global bullets
+                            global active_bullets
                             # compute normalized direction toward player
                             ang = math.atan2(dy, dx)
                             base_dx = math.cos(ang)
@@ -1125,7 +1125,7 @@ def update_drones(dt):
                             for off in offsets:
                                 bx = float(d["x"] + d.get("w",0)/2 + perp_x * off)
                                 by = float(d["y"] + d.get("h",0)/2 + perp_y * off)
-                                bullets.append({
+                                active_bullets.append({
                                     "x": bx,
                                     "y": by,
                                     "dx": base_dx * speed,
@@ -1153,7 +1153,7 @@ def update_drones(dt):
         # if the boss is chasing update its target each frame to track the player
         if d.get("is_boss") and d.get("chasing"):
             # update target to follow player center
-            d["target"] = (player.centerx - d.get("w",0)/2, player.centery - d.get("h",0)/2)
+            d["target"] = (player_rect.centerx - d.get("w",0)/2, player_rect.centery - d.get("h",0)/2)
             # if player is outside detection cone increment lost timer
             if dist > d["scan_range"] or abs(diff) > d["scan_angle"]/2:
                 d["lost_timer"] = d.get("lost_timer", 0.0) + dt_sec
@@ -1165,7 +1165,7 @@ def update_drones(dt):
 
 def draw_drones(surface):
     """Draw drones for current room with radar triangle sweep."""
-    room_key = tuple(current_room)
+    room_key = tuple(current_room_coords)
     for d in drones:
         if tuple(d["room_key"]) != room_key:
             continue
@@ -1185,7 +1185,7 @@ def draw_drones(surface):
         r = d["scan_range"] * (0.9 + 0.1 * math.sin(d.get("scan_timer", 0)))
         left = (cx + math.cos(angle - spread/2) * r, cy + math.sin(angle - spread/2) * r)
         right = (cx + math.cos(angle + spread/2) * r, cy + math.sin(angle + spread/2) * r)
-        radar_surf = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+        radar_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         pygame.draw.polygon(radar_surf, (255, 0, 0, 60), [(cx, cy), left, right])
         pygame.draw.polygon(radar_surf, (255, 0, 0, 160), [(cx, cy), left, right], 2)
         surface.blit(radar_surf, (0,0))
@@ -1441,7 +1441,7 @@ room_data = {
                                                         {"type": "invisible", "x": 100, "y": 375, "width": 150, "height": 75}
                                                      ],
                  "interactive": [
-                     {"type": "race_terminal", "x": ROOM_WIDTH // 2 - 14, "y": ROOM_HEIGHT // 2 - 14, "width": 28, "height": 28}
+                     {"type": "race_terminal", "x": SCREEN_WIDTH // 2 - 14, "y": SCREEN_HEIGHT // 2 - 14, "width": 28, "height": 28}
                  ]
                  , "npcs": [],
                  "items": []},
@@ -1542,8 +1542,8 @@ def _seed_level2_credits():
             valid = False
             attempts = 0
             while not valid and attempts < 10:
-                cx = random.randint(100, ROOM_WIDTH - 100)
-                cy = random.randint(100, ROOM_HEIGHT - 100)
+                cx = random.randint(100, SCREEN_WIDTH - 100)
+                cy = random.randint(100, SCREEN_HEIGHT - 100)
                                                            
                 point_rect = pygame.Rect(cx, cy, 1, 1)
                 in_barrier = any(point_rect.colliderect(pygame.Rect(b["x"], b["y"], b["width"], b["height"])) for b in barriers)
@@ -1594,8 +1594,8 @@ def update_boss(dt):
     
                     
     speed = 300  
-    dx = player.centerx - boss["rect"].centerx
-    dy = player.centery - boss["rect"].centery
+    dx = player_rect.centerx - boss["rect"].centerx
+    dy = player_rect.centery - boss["rect"].centery
     dist = math.hypot(dx, dy)
     
     if dx > 0:
@@ -1609,8 +1609,8 @@ def update_boss(dt):
         boss["rect"].y += (dy / dist) * step
         
         
-        boss["rect"].x = max(100, min(ROOM_WIDTH - boss["rect"].width - 100, boss["rect"].x))
-        boss["rect"].y = max(100, min(ROOM_HEIGHT - boss["rect"].height - 100, boss["rect"].y))
+        boss["rect"].x = max(100, min(SCREEN_WIDTH - boss["rect"].width - 100, boss["rect"].x))
+        boss["rect"].y = max(100, min(SCREEN_HEIGHT - boss["rect"].height - 100, boss["rect"].y))
     
                             
     if boss_phase == 1:
@@ -1640,7 +1640,7 @@ def update_boss(dt):
             
            
             axe_rect = calculate_axe_rect()
-            if player.colliderect(axe_rect):
+            if player_rect.colliderect(axe_rect):
                 damage = boss_axe_damage - (armor_level * 5)  
                 if boss_phase == 2:
                     damage += 10  
@@ -1656,8 +1656,8 @@ def throw_axe():
         return
     
 
-    dx = player.centerx - boss["rect"].centerx
-    dy = player.centery - boss["rect"].centery
+    dx = player_rect.centerx - boss["rect"].centerx
+    dy = player_rect.centery - boss["rect"].centery
     dist = math.hypot(dx, dy)
     
     if dist > 0:
@@ -1676,17 +1676,17 @@ def draw_inventory_hud(surface):
     """Draw a modern, organized inventory HUD that's always visible."""
                                                        
     hud_height = 110
-    hud_bg = pygame.Surface((ROOM_WIDTH, hud_height), pygame.SRCALPHA)
+    hud_bg = pygame.Surface((SCREEN_WIDTH, hud_height), pygame.SRCALPHA)
     hud_bg.fill((0, 0, 0, 180))                         
     surface.blit(hud_bg, (0, 0))
     
                            
-    pygame.draw.line(surface, (255, 215, 0), (0, hud_height), (ROOM_WIDTH, hud_height), 2)
+    pygame.draw.line(surface, (255, 215, 0), (0, hud_height), (SCREEN_WIDTH, hud_height), 2)
     
                       
     x_start = 20
     y_start = 15
-    section_width = (ROOM_WIDTH - 40) // 4
+    section_width = (SCREEN_WIDTH - 40) // 4
     
                                
     pygame.draw.rect(surface, (30, 30, 40, 200), (x_start, y_start, section_width, 80))
@@ -1712,25 +1712,25 @@ def draw_inventory_hud(surface):
     pygame.draw.rect(surface, (30, 30, 40, 200), (section2_x, y_start, section_width, 80))
     pygame.draw.rect(surface, (255, 215, 0), (section2_x, y_start, section_width, 80), 2)
     
-    weapon_name = "Neon Blaster" if is_laser_weapon else "Firearm" if has_weapon else "None"
+    weapon_name = "Neon Blaster" if using_laser_weapon else "Firearm" if player_has_weapon else "None"
     weapon_name_text = small_font.render(f"WEAPON: {weapon_name}", True, (255, 255, 255))
     surface.blit(weapon_name_text, (section2_x + 20, y_start + 5))
     
                   
-    if has_weapon:
-        ammo_text = font.render(f"{ammo}/{max_ammo}", True, (255, 255, 255))
+    if player_has_weapon:
+        ammo_text = font.render(f"{current_ammo}/{max_ammo_count}", True, (255, 255, 255))
         surface.blit(ammo_text, (section2_x + 30, y_start + 25))
         
                   
         ammo_bar_width = section_width - 60
         pygame.draw.rect(surface, (50, 50, 70), (section2_x + 20, y_start + 50, ammo_bar_width, 8))
-        if max_ammo > 0:
-            ammo_fill = (ammo / max_ammo) * ammo_bar_width
-            ammo_color = (0, 200, 255) if is_laser_weapon else (255, 200, 0)
+        if max_ammo_count > 0:
+            ammo_fill = (current_ammo / max_ammo_count) * ammo_bar_width
+            ammo_color = (0, 200, 255) if using_laser_weapon else (255, 200, 0)
             pygame.draw.rect(surface, ammo_color, (section2_x + 20, y_start + 50, ammo_fill, 8))
         
                           
-        if is_reloading:
+        if reloading_active:
             reload_text = small_font.render("RELOADING...", True, (255, 50, 50))
             surface.blit(reload_text, (section2_x + 20, y_start + 62))
     else:
@@ -1808,19 +1808,19 @@ def draw_quick_inventory(surface):
         return
     
     bar_height = 100
-    bar_y = ROOM_HEIGHT - bar_height
+    bar_y = SCREEN_HEIGHT - bar_height
     
                 
-    bar_bg = pygame.Surface((ROOM_WIDTH, bar_height), pygame.SRCALPHA)
+    bar_bg = pygame.Surface((SCREEN_WIDTH, bar_height), pygame.SRCALPHA)
     bar_bg.fill((0, 0, 0, 220))
     surface.blit(bar_bg, (0, bar_y))
     
                 
-    pygame.draw.line(surface, (255, 215, 0), (0, bar_y), (ROOM_WIDTH, bar_y), 2)
+    pygame.draw.line(surface, (255, 215, 0), (0, bar_y), (SCREEN_WIDTH, bar_y), 2)
     
                      
     headers = ["RESOURCES", "QUEST ITEMS", "UPGRADES", "CONSUMABLES"]
-    item_width = ROOM_WIDTH // 4
+    item_width = SCREEN_WIDTH // 4
     item_height = 80
     
     for i, header in enumerate(headers):
@@ -1861,7 +1861,7 @@ def draw_quick_inventory(surface):
                                  
 def draw_enhanced_weapon_hud(surface):
     """Draw an enhanced weapon HUD with more detailed information."""
-    if not has_weapon:
+    if not player_has_weapon:
         return
     
     
@@ -1877,12 +1877,12 @@ def draw_enhanced_weapon_hud(surface):
     surface.blit(panel_bg, (panel_x, panel_y))
     
                       
-    weapon_color = (0, 200, 255) if is_laser_weapon else (255, 200, 0)
-    weapon_type_text = font.render("LASER" if is_laser_weapon else "FIREARM", True, weapon_color)
+    weapon_color = (0, 200, 255) if using_laser_weapon else (255, 200, 0)
+    weapon_type_text = font.render("LASER" if using_laser_weapon else "FIREARM", True, weapon_color)
     surface.blit(weapon_type_text, (panel_x + 10, panel_y + 10))
     
                                   
-    ammo_text = font.render(f"{ammo} / {max_ammo}", True, (255, 255, 255))
+    ammo_text = font.render(f"{current_ammo} / {max_ammo_count}", True, (255, 255, 255))
     surface.blit(ammo_text, (panel_x + 10, panel_y + 40))
     
               
@@ -1895,8 +1895,8 @@ def draw_enhanced_weapon_hud(surface):
     pygame.draw.rect(surface, (50, 50, 70), (ammo_bar_x, ammo_bar_y, ammo_bar_width, ammo_bar_height))
     
                     
-    if max_ammo > 0:
-        ammo_percent = ammo / max_ammo
+    if max_ammo_count > 0:
+        ammo_percent = current_ammo / max_ammo_count
         ammo_fill_width = ammo_bar_width * ammo_percent
         
         if ammo_percent > 0.5:
@@ -1906,7 +1906,7 @@ def draw_enhanced_weapon_hud(surface):
         else:
             fill_color = (255, 50, 0)               
             
-        if is_laser_weapon:
+        if using_laser_weapon:
             fill_color = (0, 200, 255)                  
         
         pygame.draw.rect(surface, fill_color, (ammo_bar_x, ammo_bar_y, ammo_fill_width, ammo_bar_height))
@@ -1915,38 +1915,38 @@ def draw_enhanced_weapon_hud(surface):
     pygame.draw.rect(surface, (200, 200, 200), (ammo_bar_x, ammo_bar_y, ammo_bar_width, ammo_bar_height), 1)
     
                       
-    if is_reloading:
+    if reloading_active:
         reload_text = small_font.render("RELOADING...", True, (255, 100, 100))
         surface.blit(reload_text, (panel_x + 10, panel_y + 85))
         
                              
-        reload_progress = 1.0 - (reload_time / 2.0)
+        reload_progress = 1.0 - (reload_timer / 2.0)
         reload_bar_width = ammo_bar_width * reload_progress
         pygame.draw.rect(surface, (255, 50, 50), (ammo_bar_x, ammo_bar_y, reload_bar_width, 3))
 
 def enter_level_2():
     """Warp player to Level-2 Rooftop Hideout, reset game state for level 2."""
-    global current_room, player, health, max_health, weapon_level, armor_level
-    global has_weapon, ammo, max_ammo, inventory, quests
+    global current_room_coords, player_rect, health, max_health, weapon_level, armor_level
+    global player_has_weapon, current_ammo, max_ammo_count, inventory, quests
     global collected_gold, collected_herbs, collected_potions, collected_keys, collected_timeshards
     global boss_defeated, boss_drop_collected
     
     try:
                                                     
-        current_room[0] = 1
-        current_room[1] = 1
-        current_room[2] = 2
+        current_room_coords[0] = 1
+        current_room_coords[1] = 0
+        current_room_coords[2] = 0
                                                           
                                                                          
-        player.center = (ROOM_WIDTH // 2 + 150, ROOM_HEIGHT // 2)
+        player_rect.center = (SCREEN_WIDTH // 2 + 150, SCREEN_HEIGHT // 2)
        
                                                               
         max_health = 200
         health = max_health
         
-        has_weapon = False  
-        ammo = 0
-        max_ammo = 40  
+        player_has_weapon = False  
+        current_ammo = 0
+        max_ammo_count = 40  
         weapon_level = 1
 
         keep_gold = inventory.get("Gold", 0)
@@ -1991,15 +1991,15 @@ def enter_level_3():
     # enter_level_3 moves the player to the next big area
     # it keeps some important items like gold keycards and time shards
     # other progress is reset so the level feels new
-    global current_room, player, health, max_health, weapon_level, armor_level
-    global has_weapon, ammo, max_ammo, inventory, quests
+    global current_room_coords, player_rect, health, max_health, weapon_level, armor_level
+    global player_has_weapon, current_ammo, max_ammo_count, inventory, quests
     global collected_gold, collected_herbs, collected_potions, collected_keys, collected_timeshards
     global boss_defeated, boss_drop_collected
     try:
-        current_room[0] = 2
-        current_room[1] = 1
-        current_room[2] = 1
-        player.center = (ROOM_WIDTH // 2, ROOM_HEIGHT // 2)
+        current_room_coords[0] = 2
+        current_room_coords[1] = 1
+        current_room_coords[2] = 1
+        player_rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
 
         # keep gold and keycards
         keep_gold = inventory.get("Gold", 0)
@@ -2046,14 +2046,14 @@ def update_thrown_axes(dt_sec):
         axe["angle"] += 10  
         
         
-        if (axe["x"] < -50 or axe["x"] > ROOM_WIDTH + 50 or 
-            axe["y"] < -50 or axe["y"] > ROOM_HEIGHT + 50):
+        if (axe["x"] < -50 or axe["x"] > SCREEN_WIDTH + 50 or 
+            axe["y"] < -50 or axe["y"] > SCREEN_HEIGHT + 50):
             axes_to_remove.append(i)
             continue
         
         
         axe_rect = pygame.Rect(axe["x"] - 20, axe["y"] - 10, 40, 20)
-        if player.colliderect(axe_rect):
+        if player_rect.colliderect(axe_rect):
                                                                        
             damage = boss_axe_damage - (armor_level * 3)
             health = max(0, health - damage)
@@ -2110,7 +2110,7 @@ def draw_boss(surface):
     
     
     health_width = 300
-    health_x = ROOM_WIDTH // 2 - health_width // 2
+    health_x = SCREEN_WIDTH // 2 - health_width // 2
     health_y = 20
     
     pygame.draw.rect(surface, (100, 0, 0), (health_x, health_y, health_width, 25))
@@ -2123,13 +2123,13 @@ def draw_boss(surface):
 
 def check_boss_hit():
     """Check if bullets hit the boss."""
-    global boss_health, bullets, boss_defeated, boss_phase
+    global boss_health, active_bullets, boss_defeated, boss_phase
     
     if not boss or not boss["alive"]:
         return
     
     bullets_to_remove = []
-    for i, bullet in enumerate(bullets):
+    for i, bullet in enumerate(active_bullets):
         bullet_rect = pygame.Rect(bullet["x"] - 2, bullet["y"] - 2, 4, 4)
         if boss["rect"].colliderect(bullet_rect):
             boss_health -= bullet["damage"]
@@ -2148,7 +2148,7 @@ def check_boss_hit():
     
     
     for i in sorted(bullets_to_remove, reverse=True):
-        bullets.pop(i)
+        active_bullets.pop(i)
 
 def draw_boss_drops(surface):
     """Draw the boss drops after defeat."""
@@ -2167,7 +2167,7 @@ def collect_boss_drops():
     
     if boss_defeated and not boss_drop_collected:
         drop_rect = pygame.Rect(boss["rect"].centerx - 40, boss["rect"].centery - 40, 80, 80)
-        if player.colliderect(drop_rect):
+        if player_rect.colliderect(drop_rect):
             inventory["Time Shards"] += 1
             inventory["Keys"] += 1
             boss_drop_collected = True
@@ -2197,12 +2197,12 @@ def init_boss2():
     global boss2, boss2_health, boss2_max_health, boss2_alive, boss2_defeated, boss2_phase, boss2_laser_cooldown, boss2_laser_charge_index, boss2_lasers, boss2_contact_cooldown, boss2_projectiles, boss2_attack_cooldown, boss2_accuracy
                                                                                     
     try:
-        px, py = player.centerx, player.centery
+        px, py = player_rect.centerx, player_rect.centery
     except Exception:
-        px, py = ROOM_WIDTH // 2, ROOM_HEIGHT // 2
+        px, py = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
     offset_x, offset_y = 80, 80
-    bx = max(0, min(ROOM_WIDTH - 110, int(px + offset_x)))
-    by = max(0, min(ROOM_HEIGHT - 130, int(py + offset_y)))
+    bx = max(0, min(SCREEN_WIDTH - 110, int(px + offset_x)))
+    by = max(0, min(SCREEN_HEIGHT - 130, int(py + offset_y)))
     boss2 = {"rect": pygame.Rect(bx, by, 110, 130), "alive": True}
     boss2_phase = 1
     boss2_max_health = boss2_phase1_hp + boss2_phase2_hp                                            
@@ -2234,8 +2234,8 @@ def update_boss2(dt):
     
                                        
     if boss2_phase == 1:
-        dx = player.centerx - boss2["rect"].centerx
-        dy = player.centery - boss2["rect"].centery
+        dx = player_rect.centerx - boss2["rect"].centerx
+        dy = player_rect.centery - boss2["rect"].centery
         dist = math.hypot(dx, dy)
         if dist > 0 and dist < 500:
             step = 120 * dt_sec
@@ -2245,8 +2245,8 @@ def update_boss2(dt):
         if boss2_attack_cooldown <= 0 and dist < 500:
             if random.random() < boss2_accuracy:
                                            
-                proj_dx = player.centerx - boss2["rect"].centerx
-                proj_dy = player.centery - boss2["rect"].centery
+                proj_dx = player_rect.centerx - boss2["rect"].centerx
+                proj_dy = player_rect.centery - boss2["rect"].centery
                 proj_dist = math.hypot(proj_dx, proj_dy)
                 if proj_dist > 0:
                                                                                          
@@ -2264,8 +2264,8 @@ def update_boss2(dt):
     
                                                                 
     elif boss2_phase == 2:
-        dx = player.centerx - boss2["rect"].centerx
-        dy = player.centery - boss2["rect"].centery
+        dx = player_rect.centerx - boss2["rect"].centerx
+        dy = player_rect.centery - boss2["rect"].centery
         dist = math.hypot(dx, dy)
         if dist > 0 and dist < 500:
             step = 180 * dt_sec                   
@@ -2275,8 +2275,8 @@ def update_boss2(dt):
         if boss2_attack_cooldown <= 0 and dist < 500:
             if random.random() < boss2_accuracy:
                                            
-                proj_dx = player.centerx - boss2["rect"].centerx
-                proj_dy = player.centery - boss2["rect"].centery
+                proj_dx = player_rect.centerx - boss2["rect"].centerx
+                proj_dy = player_rect.centery - boss2["rect"].centery
                 proj_dist = math.hypot(proj_dx, proj_dy)
                 if proj_dist > 0:
                                                              
@@ -2301,9 +2301,9 @@ def update_boss2(dt):
             if not boss2.get("charge_locations"):
                                                  
                 boss2["charge_locations"] = [
-                    (player.centerx, player.centery),                       
-                    (random.randint(50, ROOM_WIDTH - 50), random.randint(50, ROOM_HEIGHT - 50)),                    
-                    (random.randint(50, ROOM_WIDTH - 50), random.randint(50, ROOM_HEIGHT - 50))                     
+                    (player_rect.centerx, player_rect.centery),                       
+                    (random.randint(50, SCREEN_WIDTH - 50), random.randint(50, SCREEN_HEIGHT - 50)),                    
+                    (random.randint(50, SCREEN_WIDTH - 50), random.randint(50, SCREEN_HEIGHT - 50))                     
                 ]
             boss2_laser_charge_index = 3                         
         
@@ -2342,7 +2342,7 @@ def update_boss2(dt):
                                          
         if proj["lifetime"] > 0:
             proj_rect = pygame.Rect(proj["x"] - 4, proj["y"] - 4, 8, 8)
-            if player.colliderect(proj_rect):
+            if player_rect.colliderect(proj_rect):
                 health = max(0, health - 12)                     
                 global player_electrified_timer
                 player_electrified_timer = 2.0                             
@@ -2350,7 +2350,7 @@ def update_boss2(dt):
                 projectiles_to_remove.append(i)
         
                                                      
-        if proj["lifetime"] <= 0 or proj["x"] < -50 or proj["x"] > ROOM_WIDTH + 50 or proj["y"] < -50 or proj["y"] > ROOM_HEIGHT + 50:
+        if proj["lifetime"] <= 0 or proj["x"] < -50 or proj["x"] > SCREEN_WIDTH + 50 or proj["y"] < -50 or proj["y"] > SCREEN_HEIGHT + 50:
             if i not in projectiles_to_remove:
                 projectiles_to_remove.append(i)
     
@@ -2365,7 +2365,7 @@ def update_boss2(dt):
                                                                
         if laser["lifetime"] > 0:
             laser_rect = pygame.Rect(laser["x"] - 16, laser["y"] - 16, 32, 32)
-            if player.colliderect(laser_rect):
+            if player_rect.colliderect(laser_rect):
                 health = 0                       
                 set_message("Hit by laser! Game Over!", (255, 0, 0), 2.0)
         
@@ -2377,11 +2377,11 @@ def update_boss2(dt):
         boss2_lasers.pop(i)
 
 def check_boss2_hit():
-    global boss2_health, bullets, boss2_alive, boss2_defeated, boss2_phase
+    global boss2_health, active_bullets, boss2_alive, boss2_defeated, boss2_phase
     if not boss2 or not boss2.get("alive", False):
         return
     bullets_to_remove = []
-    for i, bullet in enumerate(bullets):
+    for i, bullet in enumerate(active_bullets):
         bullet_rect = pygame.Rect(bullet["x"] - 2, bullet["y"] - 2, 4, 4)
         if boss2["rect"].colliderect(bullet_rect):
             boss2_health -= bullet["damage"]
@@ -2398,7 +2398,7 @@ def check_boss2_hit():
                     room_info.setdefault("items", []).append({"type": "keycard", "x": boss2["rect"].centerx + 15, "y": boss2["rect"].centery - 25, "id": "keycard_ai_1"})
                 set_message("AI Core defeated! Drops spawned in the room.", (0, 255, 0), 3.0)
     for i in sorted(bullets_to_remove, reverse=True):
-        bullets.pop(i)
+        active_bullets.pop(i)
 
 def draw_boss2(surface):
     global boss2_phase, boss2_laser_charge_index, boss2_lasers
@@ -2441,7 +2441,7 @@ def draw_boss2(surface):
     
                 
     health_width = 250
-    health_x = ROOM_WIDTH // 2 - health_width // 2
+    health_x = SCREEN_WIDTH // 2 - health_width // 2
     health_y = 20
     pygame.draw.rect(surface, (100, 0, 0), (health_x, health_y, health_width, 20))
     pygame.draw.rect(surface, (255, 0, 0), (health_x, health_y, health_width * (boss2_health / boss2_max_health), 20))
@@ -2455,26 +2455,26 @@ def draw_boss2(surface):
 
                              
 def shoot_bullet():
-    global ammo, shoot_cooldown, is_reloading, is_laser_weapon
+    global current_ammo, shoot_cooldown_timer, reloading_active, using_laser_weapon
     
-    if not has_weapon:
+    if not player_has_weapon:
         set_message("You need a weapon! Visit the blacksmith.", (255, 200, 0), 2.0)
         return False
     
-    current_cooldown = LASER_COOLDOWN_TIME if is_laser_weapon else REGULAR_COOLDOWN_TIME
+    current_cooldown = LASER_COOLDOWN_SECONDS if using_laser_weapon else SHOT_COOLDOWN_SECONDS
         
-    if not is_reloading and ammo > 0 and shoot_cooldown <= 0:
-        dx = mouse_x - player.centerx
-        dy = mouse_y - player.centery
+    if not reloading_active and current_ammo > 0 and shoot_cooldown_timer <= 0:
+        dx = mouse_x - player_rect.centerx
+        dy = mouse_y - player_rect.centery
         dist = math.sqrt(dx*dx + dy*dy)
         
         if dist > 0:
-            bullet_speed = 20.0 if is_laser_weapon else 15.0
+            bullet_speed = 20.0 if using_laser_weapon else 15.0
             damage = 20 + (weapon_level * 5)  
-            if is_laser_weapon:
+            if using_laser_weapon:
                 damage += 15
             
-            if is_laser_weapon:
+            if using_laser_weapon:
                 bullet_color_main = (0, 255, 255)
                 bullet_color_inner = (0, 200, 255)
                 bullet_radius = 6
@@ -2483,29 +2483,29 @@ def shoot_bullet():
                 bullet_color_inner = (255, 200, 0)
                 bullet_radius = 4
             
-            bullets.append({
-                "x": float(player.centerx),
-                "y": float(player.centery),
+            active_bullets.append({
+                "x": float(player_rect.centerx),
+                "y": float(player_rect.centery),
                 "dx": (dx / dist) * bullet_speed,
                 "dy": (dy / dist) * bullet_speed,
                 "damage": damage,
-                "is_laser": is_laser_weapon,
+                "is_laser": using_laser_weapon,
                 "color_main": bullet_color_main,
                 "color_inner": bullet_color_inner,
                 "radius": bullet_radius
             })
             
-            ammo -= 1
-            shoot_cooldown = current_cooldown
+            current_ammo -= 1
+            shoot_cooldown_timer = current_cooldown
             
                                                                                                     
-            level_id = current_room[0] if current_room else 0
+            level_id = current_room_coords[0] if current_room_coords else 0
             if level_id == 1:
                 play_sound(LASER_SOUND)
             else:
                 play_sound(GUNSHOT_SOUND)
             
-            if is_laser_weapon:
+            if using_laser_weapon:
                 set_message("Pew! Laser!", (0, 255, 255), 0.3)
             else:
                 set_message("Pew!", (255, 255, 0), 0.5)
@@ -2513,8 +2513,8 @@ def shoot_bullet():
             return True
 
 
-    if ammo == 0 and has_weapon and not is_reloading:
-        if is_laser_weapon:
+    if current_ammo == 0 and player_has_weapon and not reloading_active:
+        if using_laser_weapon:
             set_message("Energy cells depleted! Buy more from Neon Market.", (255, 100, 255), 1.5)
         else:
             set_message("Out of ammo! Buy more from the blacksmith.", (255, 200, 0), 1.5)
@@ -2526,16 +2526,16 @@ def update_bullets(dt):
     # bullets travel fast and we remove them when they go offscreen
     # bullets can damage goblins timebandits and even the drone boss
     """Update bullet positions and check collisions."""
-    global bullets
+    global active_bullets
     
     bullets_to_remove = []
-    for i, bullet in enumerate(bullets):
+    for i, bullet in enumerate(active_bullets):
         bullet["x"] += bullet["dx"] * (dt / 16.0)
         bullet["y"] += bullet["dy"] * (dt / 16.0)
         
        
-        if (bullet["x"] < 0 or bullet["x"] > ROOM_WIDTH or 
-            bullet["y"] < 0 or bullet["y"] > ROOM_HEIGHT):
+        if (bullet["x"] < 0 or bullet["x"] > SCREEN_WIDTH or 
+            bullet["y"] < 0 or bullet["y"] > SCREEN_HEIGHT):
             bullets_to_remove.append(i)
             continue
 
@@ -2543,7 +2543,7 @@ def update_bullets(dt):
         if bullet.get("hostile"):
             br = int(bullet.get("radius", 4))
             bullet_rect = pygame.Rect(bullet["x"] - br, bullet["y"] - br, br * 2, br * 2)
-            if player.colliderect(bullet_rect):
+            if player_rect.colliderect(bullet_rect):
                 try:
                     global health
                     health = max(0, health - int(bullet.get("damage", 0)))
@@ -2554,7 +2554,7 @@ def update_bullets(dt):
                 continue
 
        
-        room_key = tuple(current_room)
+        room_key = tuple(current_room_coords)
         state = goblin_rooms.get(room_key)
         if state:
             w, h = get_npc_size("goblin")
@@ -2609,7 +2609,7 @@ def update_bullets(dt):
                 room_info = room_data.get(room_key, {})
                 items = room_info.get("items")
                 if items is not None:
-                    items.append({"type": "keycard", "x": ROOM_WIDTH//2 - 20, "y": ROOM_HEIGHT//2 - 20, "id": f"keycard_timebandit_{room_key[1]}_{room_key[2]}"})
+                    items.append({"type": "keycard", "x": SCREEN_WIDTH//2 - 20, "y": SCREEN_HEIGHT//2 - 20, "id": f"keycard_timebandit_{room_key[1]}_{room_key[2]}"})
                                                                  
                     try:
                         inventory["Gold"] += 50
@@ -2620,18 +2620,18 @@ def update_bullets(dt):
                 set_message("A Keycard has appeared!", (255, 215, 0), 3.0)
     
    
-    if tuple(current_room) == (0, 2, 0) and boss and boss["alive"]:
+    if tuple(current_room_coords) == (0, 2, 0) and boss and boss["alive"]:
         check_boss_hit()
-    if tuple(current_room) == (1, 2, 2) and boss2 and boss2.get("alive", False):
+    if tuple(current_room_coords) == (1, 2, 2) and boss2 and boss2.get("alive", False):
         check_boss2_hit()
     
 
     for i in sorted(bullets_to_remove, reverse=True):
-        bullets.pop(i)
+        active_bullets.pop(i)
 
 def draw_bullets(surface):
     
-    for bullet in bullets:
+    for bullet in active_bullets:
         color_main = bullet.get("color_main", (255, 255, 0))
         color_inner = bullet.get("color_inner", (255, 200, 0))
         radius = bullet.get("radius", 4)
@@ -2653,22 +2653,22 @@ def draw_bullets(surface):
 
 def draw_weapon_hud(surface):
     """Draw weapon ammo and reload status."""
-    if has_weapon:
-        ammo_text = font.render(f"Ammo: {ammo}/{max_ammo}", True, (255, 255, 255))
+    if player_has_weapon:
+        ammo_text = font.render(f"Ammo: {current_ammo}/{max_ammo_count}", True, (255, 255, 255))
         surface.blit(ammo_text, (10, 10))
         
-        if is_reloading:
+        if reloading_active:
             reload_text = font.render("RELOADING...", True, (255, 0, 0))
             surface.blit(reload_text, (10, 40))
-        elif ammo == 0:
+        elif current_ammo == 0:
             reload_hint = font.render("Buy ammo from Blacksmith", True, (255, 200, 0))
             surface.blit(reload_hint, (10, 40))
         
        
         weapon_text = small_font.render(f"Weapon Lvl: {weapon_level}", True, (200, 200, 255))
         armor_text = small_font.render(f"Armor Lvl: {armor_level}", True, (200, 255, 200))
-        surface.blit(weapon_text, (10, ROOM_HEIGHT - 80))
-        surface.blit(armor_text, (10, ROOM_HEIGHT - 60))
+        surface.blit(weapon_text, (10, SCREEN_HEIGHT - 80))
+        surface.blit(armor_text, (10, SCREEN_HEIGHT - 60))
     else:
         
         no_weapon_text = font.render("No Weapon - Visit Blacksmith", True, (255, 100, 100))
@@ -2679,25 +2679,25 @@ def draw_weapon_hud(surface):
         
         if armor_level > 0:
             armor_text = small_font.render(f"Armor Lvl: {armor_level}", True, (200, 255, 200))
-            surface.blit(armor_text, (10, ROOM_HEIGHT - 60))
+            surface.blit(armor_text, (10, SCREEN_HEIGHT - 60))
 
 def draw_cyber_shop(surface):
     """Draw the cyberpunk shop interface."""
     if not cyber_shop_visible:
         return
     
-    overlay = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 220))
     surface.blit(overlay, (0, 0))
     
                       
-    shop_rect = pygame.Rect(50, 50, ROOM_WIDTH - 100, ROOM_HEIGHT - 100)
+    shop_rect = pygame.Rect(50, 50, SCREEN_WIDTH - 100, SCREEN_HEIGHT - 100)
     pygame.draw.rect(surface, (10, 10, 30), shop_rect)
     pygame.draw.rect(surface, (0, 255, 255), shop_rect, 4)
     
            
     title = title_font.render("NEON MARKET", True, (0, 255, 255))
-    surface.blit(title, (ROOM_WIDTH//2 - title.get_width()//2, 70))
+    surface.blit(title, (SCREEN_WIDTH//2 - title.get_width()//2, 70))
     
                   
     gold_rect = pygame.Rect(shop_rect.x + 20, shop_rect.y + 80, shop_rect.width - 40, 40)
@@ -2719,8 +2719,8 @@ def draw_cyber_shop(surface):
     stats_lines = [
         f"Weapon Damage: {20 + (weapon_level * 5) + cyber_damage}",
         f"Max Health: {max_health + cyber_health} | Current: {health}",
-        f"Ammo: {ammo}/{max_ammo + cyber_ammo_cap}",
-        f"Ammo Packs bought (this level): {ammo_packs_bought.get(current_room[0],0)}/{MAX_AMMO_PACKS}"
+        f"Ammo: {current_ammo}/{max_ammo_count + cyber_ammo_cap}",
+        f"Ammo Packs bought (this level): {ammo_packs_purchased.get(current_room_coords[0],0)}/{MAX_AMMO_PACKS}"
     ]
     
     for i, line in enumerate(stats_lines):
@@ -2778,7 +2778,7 @@ def draw_cyber_shop(surface):
         if not item.get("purchased", False):
             button_rect = pygame.Rect(item_bg.x + item_bg.width - 90, item_bg.y + 70, 80, 30)
                                                                                                
-            can_purchase = inventory["Gold"] >= cost and (item_id != "cyber_ammo" or ammo_packs_bought.get(current_room[0], 0) < MAX_AMMO_PACKS)
+            can_purchase = inventory["Gold"] >= cost and (item_id != "cyber_ammo" or ammo_packs_purchased.get(current_room_coords[0], 0) < MAX_AMMO_PACKS)
             if can_purchase:
                 pygame.draw.rect(surface, (0, 80, 80), button_rect)
                 pygame.draw.rect(surface, (0, 200, 200), button_rect, 2)
@@ -2803,7 +2803,7 @@ def draw_cyber_shop(surface):
     
     return item_buttons, close_rect
 def handle_cyber_purchase(item_id):
-    global ammo, max_ammo, health, max_health, inventory, weapon_level, has_weapon, is_laser_weapon
+    global current_ammo, max_ammo_count, health, max_health, inventory, weapon_level, player_has_weapon, using_laser_weapon
     
     item = blacksmith_items[item_id]
     
@@ -2817,18 +2817,18 @@ def handle_cyber_purchase(item_id):
 
                                                                                    
     if item_id == "cyber_ammo":
-        level = current_room[0]
-        if ammo_packs_bought.get(level, 0) >= MAX_AMMO_PACKS:
+        level = current_room_coords[0]
+        if ammo_packs_purchased.get(level, 0) >= MAX_AMMO_PACKS:
             set_message("Ammo pack purchase limit reached for this level!", (255, 200, 0), 2.0)
             return False
                                                                                       
     inventory["Gold"] -= item["cost"]
     
     if item_id == "cyber_weapon":
-        has_weapon = True
-        is_laser_weapon = True
-        max_ammo += 50
-        ammo = max_ammo
+        player_has_weapon = True
+        using_laser_weapon = True
+        max_ammo_count += 50
+        current_ammo = max_ammo_count
         weapon_level += 1
         quests["buy_laser_weapon"]["complete"] = True
         quests["upgrade_laser"]["active"] = True
@@ -2844,11 +2844,11 @@ def handle_cyber_purchase(item_id):
     
     elif item_id == "cyber_ammo":
                                                                                
-        level = current_room[0]
+        level = current_room_coords[0]
         pack_amount = 50
-        ammo_packs_bought[level] = ammo_packs_bought.get(level, 0) + 1
+        ammo_packs_purchased[level] = ammo_packs_purchased.get(level, 0) + 1
         inventory["Ammo Packs"] = inventory.get("Ammo Packs", 0) + 1
-        set_message(f"Purchased {item['name']} ({ammo_packs_bought[level]}/{MAX_AMMO_PACKS})! Ammo Packs: {inventory['Ammo Packs']}", (0, 255, 255), 2.0)
+        set_message(f"Purchased {item['name']} ({ammo_packs_purchased[level]}/{MAX_AMMO_PACKS})! Ammo Packs: {inventory['Ammo Packs']}", (0, 255, 255), 2.0)
     
     elif item_id == "cyber_potion":
         health = min(max_health, health + 50)
@@ -2857,7 +2857,7 @@ def handle_cyber_purchase(item_id):
     return True
 def respawn_player():
     """Handle player respawn with penalties."""
-    global health, max_health, weapon_level, armor_level, player, current_room, ammo, is_reloading, reload_time
+    global health, max_health, weapon_level, armor_level, player_rect, current_room_coords, current_ammo, reloading_active, reload_timer
     
    
     if weapon_level > 1:
@@ -2868,12 +2868,12 @@ def respawn_player():
     
     
     health = max_health
-    player.x = 100
-    player.y = ROOM_HEIGHT - 150
-    current_room = [0, 0, 0]  
-    ammo = 0 if not has_weapon else max_ammo
-    is_reloading = False
-    reload_time = 0.0
+    player_rect.x = 100
+    player_rect.y = SCREEN_HEIGHT - 150
+    current_room_coords = [0, 0, 0]  
+    current_ammo = 0 if not player_has_weapon else max_ammo_count
+    reloading_active = False
+    reload_timer = 0.0
     
     set_message("You died! Respawned in village. Lost 1 weapon and armor level.", (255, 100, 100), 4.0)
 
@@ -2886,7 +2886,7 @@ def draw_object(x, y, obj_type, surface, level, width=None, height=None):
         colliders.append(rect)
         
                                                           
-        if DEV_MODE:
+        if DEBUG_MODE:
            
             debug_surface = pygame.Surface((width, height), pygame.SRCALPHA)
            
@@ -2904,10 +2904,10 @@ def draw_object(x, y, obj_type, surface, level, width=None, height=None):
     
     if obj_type == "damage":
         rect = pygame.Rect(x, y, width, height)
-        damage_zones.append(rect)
+        hazard_zones.append(rect)
         
         
-        if DEV_MODE:
+        if DEBUG_MODE:
             debug_surface = pygame.Surface((width, height), pygame.SRCALPHA)
             debug_surface.fill((255, 100, 0, 60))  
             surface.blit(debug_surface, (x, y))
@@ -2956,21 +2956,21 @@ def draw_object(x, y, obj_type, surface, level, width=None, height=None):
 
 def handle_damage_zones(dt):
     """Check if player is in damage zones and apply damage."""
-    global health, damage_timer, message, message_timer, message_color
+    global health, hazard_timer, hud_message, hud_message_timer, hud_message_color
     
-    damage_timer += dt / 1000.0  
+    hazard_timer += dt / 1000.0  
 
 
     player_in_damage_zone = False
-    for zone in damage_zones:
-        if player.colliderect(zone):
+    for zone in hazard_zones:
+        if player_rect.colliderect(zone):
             player_in_damage_zone = True
             break
     
     if player_in_damage_zone:
 
-        if damage_timer >= 1.0:
-            damage_timer = 0.0
+        if hazard_timer >= 1.0:
+            hazard_timer = 0.0
             health -= 5  
             
             set_message("-5 Health!", (255, 0, 0), 1.0)
@@ -2985,37 +2985,37 @@ def handle_damage_zones(dt):
         border_width = int(5 + pulse * 10)  
         
 
-        border_surface = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+        border_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         
 
-        pygame.draw.rect(border_surface, (255, 0, 0, border_alpha), (0, 0, ROOM_WIDTH, border_width))
+        pygame.draw.rect(border_surface, (255, 0, 0, border_alpha), (0, 0, SCREEN_WIDTH, border_width))
 
-        pygame.draw.rect(border_surface, (255, 0, 0, border_alpha), (0, ROOM_HEIGHT - border_width, ROOM_WIDTH, border_width))
+        pygame.draw.rect(border_surface, (255, 0, 0, border_alpha), (0, SCREEN_HEIGHT - border_width, SCREEN_WIDTH, border_width))
 
-        pygame.draw.rect(border_surface, (255, 0, 0, border_alpha), (0, 0, border_width, ROOM_HEIGHT))
+        pygame.draw.rect(border_surface, (255, 0, 0, border_alpha), (0, 0, border_width, SCREEN_HEIGHT))
      
-        pygame.draw.rect(border_surface, (255, 0, 0, border_alpha), (ROOM_WIDTH - border_width, 0, border_width, ROOM_HEIGHT))
+        pygame.draw.rect(border_surface, (255, 0, 0, border_alpha), (SCREEN_WIDTH - border_width, 0, border_width, SCREEN_HEIGHT))
         
         screen.blit(border_surface, (0, 0))
         
     else:
   
-        damage_timer = 0.0
+        hazard_timer = 0.0
 
 def _player_frame_for_state(state, direction):
     """Pick the correct frame list for the given state/direction."""
     _ensure_player_frames()
     key = f"{state}_{direction}"
-    frames = player_anim_frames.get(key)
+    frames = player_frames.get(key)
     if frames:
         return frames
-    return player_anim_frames.get(f"idle_{direction}", [])
+    return player_frames.get(f"idle_{direction}", [])
 
 def draw_player(surface, player_rect, dt, moving):
     """Draw player using the new run/idle sprite sheets."""
-    global player_anim_state, player_anim_index, player_anim_timer
+    global player_state, player_frame_index, player_frame_timer
     
-    direction = "left" if player_direction == "left" else "right"
+    direction = "left" if player_facing == "left" else "right"
     state = "run" if moving else "idle"
     frames = _player_frame_for_state(state, direction)
     if not frames:
@@ -3024,34 +3024,34 @@ def draw_player(surface, player_rect, dt, moving):
         surface.blit(img, img_rect)
         return
     
-    if state != player_anim_state:
-        player_anim_state = state
-        player_anim_index = 0
-        player_anim_timer = 0.0
+    if state != player_state:
+        player_state = state
+        player_frame_index = 0
+        player_frame_timer = 0.0
     
     if moving:
-        player_anim_timer += dt / 1000.0
-        if player_anim_timer >= PLAYER_ANIM_SPEED:
-            player_anim_timer = 0.0
-            player_anim_index = (player_anim_index + 1) % len(frames)
+        player_frame_timer += dt / 1000.0
+        if player_frame_timer >= PLAYER_ANIM_SPEED:
+            player_frame_timer = 0.0
+            player_frame_index = (player_frame_index + 1) % len(frames)
     else:
-        player_anim_index = 0
-        player_anim_timer = 0.0
+        player_frame_index = 0
+        player_frame_timer = 0.0
     
-    frame = frames[player_anim_index % len(frames)]
+    frame = frames[player_frame_index % len(frames)]
     frame_rect = frame.get_rect(center=player_rect.center)
     surface.blit(frame, frame_rect)
 
 def draw_player_pointer(surface, player_rect):
     """Draw a small pointer anchored to the player's left side."""
     center_y = player_rect.centery
-    tip_x = player_rect.left + POINTER_OFFSET_X
+    tip_x = player_rect.left + AIM_POINTER_OFFSET_X
     points = [
-        (tip_x + POINTER_SIZE, center_y - POINTER_SIZE // 2),
+        (tip_x + AIM_POINTER_SIZE, center_y - AIM_POINTER_SIZE // 2),
         (tip_x, center_y),
-        (tip_x + POINTER_SIZE, center_y + POINTER_SIZE // 2),
+        (tip_x + AIM_POINTER_SIZE, center_y + AIM_POINTER_SIZE // 2),
     ]
-    pygame.draw.polygon(surface, POINTER_COLOR, points)
+    pygame.draw.polygon(surface, AIM_POINTER_COLOR, points)
 
 def draw_npc(surface, x, y, npc_id, rescued=False):
     """Draw NPCs using images."""
@@ -3127,7 +3127,7 @@ def draw_timebandits(surface, room_key):
 def draw_item(surface, x, y, item_type, item_id):
     """Draw items using images or procedural graphics."""
     
-    level, row, col = current_room
+    level, row, col = current_room_coords
     collected_set = get_collected_set(item_type)
     if (level, row, col, x, y) in collected_set:
         return None
@@ -3187,7 +3187,7 @@ def draw_room(surface, level, row, col):
     # it resets lists like colliders and items then rebuilds them from room_data
     # this is called every frame so keep it relatively fast
     """Draw the current room using images only."""
-    global colliders, gold_items, herbs, potions, npcs, interactive_objects, damage_zones
+    global colliders, gold_items, herbs, potions, npcs, interactive_objects, hazard_zones
 
                                                                                       
     colliders = []
@@ -3196,7 +3196,7 @@ def draw_room(surface, level, row, col):
     potions = []
     npcs = []
     interactive_objects = []
-    damage_zones = []
+    hazard_zones = []
 
     room_key = (level, row, col)
     room_info = room_data.get(room_key, {})
@@ -3260,8 +3260,8 @@ def draw_health_bar(surface):
                                                                                  
     """Draw permanent health bar at bottom middle of screen."""
     health_width = 400
-    health_x = ROOM_WIDTH // 2 - health_width // 2
-    health_y = ROOM_HEIGHT - 50
+    health_x = SCREEN_WIDTH // 2 - health_width // 2
+    health_y = SCREEN_HEIGHT - 50
     
 
     pygame.draw.rect(surface, (100, 0, 0), (health_x, health_y, health_width, 30))
@@ -3284,7 +3284,7 @@ def draw_hud(surface):
     if not hud_visible:
         return
     
-    overlay = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 200))
     surface.blit(overlay, (0, 0))
     
@@ -3304,7 +3304,7 @@ def draw_minimap(surface, level, row, col):
     
     map_size = 150
     cell_size = map_size // 3
-    map_x = ROOM_WIDTH - map_size - 20
+    map_x = SCREEN_WIDTH - map_size - 20
     map_y = 20
     
     pygame.draw.rect(surface, (0, 0, 0, 180), (map_x - 5, map_y - 5, map_size + 10, map_size + 10))
@@ -3330,7 +3330,7 @@ def draw_quest_log(surface):
     if not quest_log_visible:
         return
     
-    overlay = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 200))
     surface.blit(overlay, (0, 0))
     
@@ -3339,7 +3339,7 @@ def draw_quest_log(surface):
     pygame.draw.rect(surface, (255, 215, 0), box, 3)
     
     title = title_font.render("QUEST LOG", True, (255, 215, 0))
-    surface.blit(title, (ROOM_WIDTH//2 - title.get_width()//2, 120))
+    surface.blit(title, (SCREEN_WIDTH//2 - title.get_width()//2, 120))
     
     y = 180
     for quest_id, quest_data in quests.items():
@@ -3351,11 +3351,11 @@ def draw_quest_log(surface):
 
 def draw_message(surface):
     """Display temporary messages."""
-    if message_timer > 0 and message:
-        msg = font.render(message, True, message_color)
-        rect = msg.get_rect(center=(ROOM_WIDTH // 2, 50))
+    if hud_message_timer > 0 and hud_message:
+        msg = font.render(hud_message, True, hud_message_color)
+        rect = msg.get_rect(center=(SCREEN_WIDTH // 2, 50))
         pygame.draw.rect(surface, (0, 0, 0), rect.inflate(20, 10))
-        pygame.draw.rect(surface, message_color, rect.inflate(20, 10), 2)
+        pygame.draw.rect(surface, hud_message_color, rect.inflate(20, 10), 2)
         surface.blit(msg, rect)
 
 def draw_dialogue(surface):
@@ -3363,7 +3363,7 @@ def draw_dialogue(surface):
     if not dialogue_active or not current_dialogue:
         return
     
-    box = pygame.Rect(50, ROOM_HEIGHT - 200, ROOM_WIDTH - 100, 150)
+    box = pygame.Rect(50, SCREEN_HEIGHT - 200, SCREEN_WIDTH - 100, 150)
     pygame.draw.rect(surface, (20, 20, 40), box)
     pygame.draw.rect(surface, (255, 215, 0), box, 3)
     
@@ -3374,7 +3374,7 @@ def draw_dialogue(surface):
     
     for word in words:
         test = line + word + " "
-        if font.size(test)[0] < ROOM_WIDTH - 150:
+        if font.size(test)[0] < SCREEN_WIDTH - 150:
             line = test
         else:
             lines.append(line)
@@ -3395,12 +3395,12 @@ def draw_blacksmith_shop(surface):
     if not upgrade_shop_visible:
         return
     
-    overlay = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 220))
     surface.blit(overlay, (0, 0))
     
 
-    shop_rect = pygame.Rect(50, 50, ROOM_WIDTH - 100, ROOM_HEIGHT - 100)
+    shop_rect = pygame.Rect(50, 50, SCREEN_WIDTH - 100, SCREEN_HEIGHT - 100)
     pygame.draw.rect(surface, (40, 30, 20), shop_rect)
     pygame.draw.rect(surface, (180, 120, 50), shop_rect, 4)
     
@@ -3410,7 +3410,7 @@ def draw_blacksmith_shop(surface):
     pygame.draw.rect(surface, (220, 180, 80), title_bg, 3)
     
     title = title_font.render("BLACKSMITH'S FORGE", True, (255, 200, 100))
-    surface.blit(title, (ROOM_WIDTH//2 - title.get_width()//2, shop_rect.y + 10))
+    surface.blit(title, (SCREEN_WIDTH//2 - title.get_width()//2, shop_rect.y + 10))
     
 
     gold_rect = pygame.Rect(shop_rect.x + 20, shop_rect.y + 80, shop_rect.width - 40, 40)
@@ -3426,9 +3426,9 @@ def draw_blacksmith_shop(surface):
     pygame.draw.rect(surface, (100, 150, 200), stats_rect, 2)
     
     stats_lines = [
-        f"Weapon: {'Equipped' if has_weapon else 'None'} (Lvl {weapon_level}) | Damage: {20 + (weapon_level * 5)}",
-        f"Armor: Lvl {armor_level} | Health: {max_health} | Ammo: {ammo}/{max_ammo}",
-        f"Ammo Packs bought (this level): {ammo_packs_bought.get(current_room[0],0)}/{MAX_AMMO_PACKS}"
+        f"Weapon: {'Equipped' if player_has_weapon else 'None'} (Lvl {weapon_level}) | Damage: {20 + (weapon_level * 5)}",
+        f"Armor: Lvl {armor_level} | Health: {max_health} | Ammo: {current_ammo}/{max_ammo_count}",
+        f"Ammo Packs bought (this level): {ammo_packs_purchased.get(current_room_coords[0],0)}/{MAX_AMMO_PACKS}"
     ]
     
     for i, line in enumerate(stats_lines):
@@ -3453,7 +3453,7 @@ def draw_blacksmith_shop(surface):
     
     for item_id, item_data in blacksmith_items.items():
                                                                                          
-        if item_data.get("cyber_only", False) and current_room[0] == 0:
+        if item_data.get("cyber_only", False) and current_room_coords[0] == 0:
             continue
         if item_data["type"] in ["weapon", "consumable"]:
                                        
@@ -3531,20 +3531,20 @@ def _can_purchase_item(item_id):
         return armor_level < ARMOR_MAX_LEVEL
     
     elif item_id == "weapon_upgrade":
-        return has_weapon and weapon_level < 5  
+        return player_has_weapon and weapon_level < 5  
     
     elif item_id in ["ammo_pack", "health_potion"]:
                                                                 
         if item_id == "ammo_pack":
-            level = current_room[0]
-            return ammo_packs_bought.get(level, 0) < MAX_AMMO_PACKS
+            level = current_room_coords[0]
+            return ammo_packs_purchased.get(level, 0) < MAX_AMMO_PACKS
         return True 
     
     return False
 
 def handle_blacksmith_purchase(item_id):
     """Handle purchasing items from the blacksmith."""
-    global has_weapon, ammo, max_ammo, health, max_health, inventory, weapon_level, armor_level
+    global player_has_weapon, current_ammo, max_ammo_count, health, max_health, inventory, weapon_level, armor_level
     
     item = blacksmith_items[item_id]
     
@@ -3557,7 +3557,7 @@ def handle_blacksmith_purchase(item_id):
         return False
     
     if not _can_purchase_item(item_id):
-        if item_id == "weapon_upgrade" and not has_weapon:
+        if item_id == "weapon_upgrade" and not player_has_weapon:
             set_message("You need to buy a weapon first!", (255, 200, 0), 2.0)
         elif item_id == "weapon_upgrade" and weapon_level >= 5:
             set_message("Weapon is already at maximum level!", (255, 200, 0), 2.0)
@@ -3573,18 +3573,18 @@ def handle_blacksmith_purchase(item_id):
 
     if item_id == "weapon":
         item["purchased"] = True
-        has_weapon = True
-        ammo = max_ammo 
+        player_has_weapon = True
+        current_ammo = max_ammo_count 
         set_message(f"Purchased {item['name']}! You can now shoot with SPACE.", (0, 255, 0), 3.0)
         quests["buy_weapon"]["complete"] = True
         quests["upgrade_sword"]["active"] = True
     
     elif item_id == "ammo_pack":
                                                                              
-        level = current_room[0]
-        ammo_packs_bought[level] = ammo_packs_bought.get(level, 0) + 1
+        level = current_room_coords[0]
+        ammo_packs_purchased[level] = ammo_packs_purchased.get(level, 0) + 1
         inventory["Ammo Packs"] = inventory.get("Ammo Packs", 0) + 1
-        set_message(f"Purchased {item['name']} ({ammo_packs_bought[level]}/{MAX_AMMO_PACKS})! Ammo Packs: {inventory['Ammo Packs']}", (0, 255, 0), 2.0)
+        set_message(f"Purchased {item['name']} ({ammo_packs_purchased[level]}/{MAX_AMMO_PACKS})! Ammo Packs: {inventory['Ammo Packs']}", (0, 255, 0), 2.0)
     
     elif item_id == "health_potion":
         health = min(max_health, health + 30)
@@ -3622,7 +3622,7 @@ def draw_safe_puzzle(surface):
     if not safe_visible:
         return
     
-    overlay = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 200))
     surface.blit(overlay, (0, 0))
     
@@ -3631,18 +3631,18 @@ def draw_safe_puzzle(surface):
     pygame.draw.rect(surface, (200, 180, 50), box, 4)
     
     title = font.render("SAFE LOCK", True, (255, 215, 0))
-    surface.blit(title, (ROOM_WIDTH//2 - title.get_width()//2, 220))
+    surface.blit(title, (SCREEN_WIDTH//2 - title.get_width()//2, 220))
     
                            
     input_text = font.render(f"Code: {safe_input}", True, (255, 255, 255))
-    surface.blit(input_text, (ROOM_WIDTH//2 - input_text.get_width()//2, 280))
+    surface.blit(input_text, (SCREEN_WIDTH//2 - input_text.get_width()//2, 280))
     
     if safe_unlocked:
         success_text = font.render("SAFE UNLOCKED! Key found!", True, (0, 255, 0))
-        surface.blit(success_text, (ROOM_WIDTH//2 - success_text.get_width()//2, 320))
+        surface.blit(success_text, (SCREEN_WIDTH//2 - success_text.get_width()//2, 320))
     else:
         hint_text = small_font.render("Enter the 4-digit code", True, (200, 200, 200))
-        surface.blit(hint_text, (ROOM_WIDTH//2 - hint_text.get_width()//2, 320))
+        surface.blit(hint_text, (SCREEN_WIDTH//2 - hint_text.get_width()//2, 320))
     
                                                     
     button_size = 50
@@ -3684,15 +3684,15 @@ def draw_maze_puzzle(surface):
     if not maze_visible:
         return
     
-    overlay = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 200))
     surface.blit(overlay, (0, 0))
     
                                           
     maze_total_width = maze_width * maze_cell_size
     maze_total_height = maze_height * maze_cell_size
-    maze_x = (ROOM_WIDTH - maze_total_width) // 2
-    maze_y = (ROOM_HEIGHT - maze_total_height) // 2
+    maze_x = (SCREEN_WIDTH - maze_total_width) // 2
+    maze_y = (SCREEN_HEIGHT - maze_total_height) // 2
     
                           
     maze_bg = pygame.Rect(maze_x - 10, maze_y - 40, maze_total_width + 20, maze_total_height + 80)
@@ -3701,11 +3701,11 @@ def draw_maze_puzzle(surface):
     
                 
     title = font.render("MAZE PUZZLE - Free the Knight!", True, (255, 215, 0))
-    surface.blit(title, (ROOM_WIDTH//2 - title.get_width()//2, maze_y - 30))
+    surface.blit(title, (SCREEN_WIDTH//2 - title.get_width()//2, maze_y - 30))
     
                        
     instructions = small_font.render("Use arrow keys to navigate to the exit (green square)", True, (200, 200, 200))
-    surface.blit(instructions, (ROOM_WIDTH//2 - instructions.get_width()//2, maze_y + maze_total_height + 10))
+    surface.blit(instructions, (SCREEN_WIDTH//2 - instructions.get_width()//2, maze_y + maze_total_height + 10))
     
                
     for y in range(maze_height):
@@ -3772,7 +3772,7 @@ def handle_maze_input():
             maze_completed = True
             maze_visible = False
            
-            room_key = tuple(current_room)
+            room_key = tuple(current_room_coords)
             room_info = room_data.get(room_key, {})
             for npc in room_info.get("npcs", []):
                 if npc.get("id") == "knight":
@@ -3797,7 +3797,7 @@ def draw_cipher_overlay(surface):
     if not cipher_text_shifted:
         return
 
-    overlay = pygame.Surface((ROOM_WIDTH, ROOM_HEIGHT), pygame.SRCALPHA)
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 220))
     surface.blit(overlay, (0, 0))
 
@@ -3806,7 +3806,7 @@ def draw_cipher_overlay(surface):
     pygame.draw.rect(surface, (0, 200, 255), box, 3)
 
     title = title_font.render("DATA HUB", True, (0, 255, 255))
-    surface.blit(title, (ROOM_WIDTH//2 - title.get_width()//2, box.y + 10))
+    surface.blit(title, (SCREEN_WIDTH//2 - title.get_width()//2, box.y + 10))
 
     shifted_text = small_font.render(f"Cipher: {cipher_text_shifted}", True, (200, 200, 255))
     surface.blit(shifted_text, (box.x + 20, box.y + 80))
@@ -3855,12 +3855,12 @@ def draw_main_menu():
            
     title = title_font.render("CHRONICLES OF TIME", True, (255, 215, 0))
     subtitle = font.render("An Epic Time-Travel Adventure", True, (200, 200, 255))
-    screen.blit(title, (ROOM_WIDTH//2 - title.get_width()//2, 150))
-    screen.blit(subtitle, (ROOM_WIDTH//2 - subtitle.get_width()//2, 220))
+    screen.blit(title, (SCREEN_WIDTH//2 - title.get_width()//2, 150))
+    screen.blit(subtitle, (SCREEN_WIDTH//2 - subtitle.get_width()//2, 220))
     
              
     button_width, button_height = 300, 60
-    button_x = ROOM_WIDTH//2 - button_width//2
+    button_x = SCREEN_WIDTH//2 - button_width//2
     
     play_button = create_button("PLAY", button_x, 300, button_width, button_height, play_button_hover)
     how_to_button = create_button("HOW TO PLAY", button_x, 380, button_width, button_height, how_to_button_hover)
@@ -3868,7 +3868,7 @@ def draw_main_menu():
     
             
     footer = small_font.render("Made by Arjun Tambe, Shuban Nannisetty and Charanjit Kukkadapu.", True, (150, 150, 150))
-    screen.blit(footer, (ROOM_WIDTH//2 - footer.get_width()//2, ROOM_HEIGHT - 40))
+    screen.blit(footer, (SCREEN_WIDTH//2 - footer.get_width()//2, SCREEN_HEIGHT - 40))
     
     return play_button, how_to_button, about_button
 
@@ -3878,10 +3878,10 @@ def draw_how_to_play():
     
            
     title = title_font.render("HOW TO PLAY", True, (255, 215, 0))
-    screen.blit(title, (ROOM_WIDTH//2 - title.get_width()//2, 80))
+    screen.blit(title, (SCREEN_WIDTH//2 - title.get_width()//2, 80))
     
                  
-    content_box = pygame.Rect(50, 150, ROOM_WIDTH - 100, ROOM_HEIGHT - 250)
+    content_box = pygame.Rect(50, 150, SCREEN_WIDTH - 100, SCREEN_HEIGHT - 250)
     pygame.draw.rect(screen, (30, 30, 50), content_box)
     pygame.draw.rect(screen, (255, 215, 0), content_box, 3)
     
@@ -3918,7 +3918,7 @@ def draw_how_to_play():
         y += 30
     
                  
-    back_button = create_button("BACK", ROOM_WIDTH//2 - 100, ROOM_HEIGHT - 80, 200, 50, back_button_hover)
+    back_button = create_button("BACK", SCREEN_WIDTH//2 - 100, SCREEN_HEIGHT - 80, 200, 50, back_button_hover)
     return back_button
 
 def draw_about():
@@ -3927,10 +3927,10 @@ def draw_about():
     
            
     title = title_font.render("ABOUT", True, (255, 215, 0))
-    screen.blit(title, (ROOM_WIDTH//2 - title.get_width()//2, 80))
+    screen.blit(title, (SCREEN_WIDTH//2 - title.get_width()//2, 80))
     
                  
-    content_box = pygame.Rect(50, 150, ROOM_WIDTH - 100, ROOM_HEIGHT - 250)
+    content_box = pygame.Rect(50, 150, SCREEN_WIDTH - 100, SCREEN_HEIGHT - 250)
     pygame.draw.rect(screen, (30, 30, 50), content_box)
     pygame.draw.rect(screen, (255, 215, 0), content_box, 3)
     
@@ -3970,71 +3970,71 @@ def draw_about():
         y += 25
     
                  
-    back_button = create_button("BACK", ROOM_WIDTH//2 - 100, ROOM_HEIGHT - 80, 200, 50, back_button_hover)
+    back_button = create_button("BACK", SCREEN_WIDTH//2 - 100, SCREEN_HEIGHT - 80, 200, 50, back_button_hover)
     return back_button
 
                         
 def collision_check(dx, dy):
     """Handle collision with objects."""
-    player.x += dx
+    player_rect.x += dx
     for collider in colliders:
-        if player.colliderect(collider):
+        if player_rect.colliderect(collider):
             if dx > 0:
-                player.right = collider.left
+                player_rect.right = collider.left
             elif dx < 0:
-                player.left = collider.right
+                player_rect.left = collider.right
     
-    player.y += dy
+    player_rect.y += dy
     for collider in colliders:
-        if player.colliderect(collider):
+        if player_rect.colliderect(collider):
             if dy > 0:
-                player.bottom = collider.top
+                player_rect.bottom = collider.top
             elif dy < 0:
-                player.top = collider.bottom
+                player_rect.top = collider.bottom
 
 def room_transition():
     """Handle moving between rooms."""
-    level, row, col = current_room
+    level, row, col = current_room_coords
     
-    if player.right > ROOM_WIDTH:
-        if col < GRID_WIDTH - 1:
-            current_room[2] += 1
-            player.left = 0
+    if player_rect.right > SCREEN_WIDTH:
+        if col < MAP_COLS - 1:
+            current_room_coords[2] += 1
+            player_rect.left = 0
         else:
-            player.right = ROOM_WIDTH
+            player_rect.right = SCREEN_WIDTH
     
-    elif player.top < 0:
-        if row < GRID_HEIGHT - 1:
-            current_room[1] += 1
-            player.bottom = ROOM_HEIGHT
+    elif player_rect.top < 0:
+        if row < MAP_ROWS - 1:
+            current_room_coords[1] += 1
+            player_rect.bottom = SCREEN_HEIGHT
         else:
-            player.top = 0
+            player_rect.top = 0
     
-    elif player.bottom > ROOM_HEIGHT:
+    elif player_rect.bottom > SCREEN_HEIGHT:
         if row > 0:
-            current_room[1] -= 1
-            player.top = 0
+            current_room_coords[1] -= 1
+            player_rect.top = 0
         else:
-            player.bottom = ROOM_HEIGHT
-    elif player.left < 0:
+            player_rect.bottom = SCREEN_HEIGHT
+    elif player_rect.left < 0:
         if col > 0:
                                                   
-            if current_room[0] == 1 and current_room[1] == 0 and current_room[2] == 1:                   
-                current_room[2] = 0          
-                player.center = (625, 450)                                                 
+            if current_room_coords[0] == 1 and current_room_coords[1] == 0 and current_room_coords[2] == 1:                   
+                current_room_coords[2] = 0          
+                player_rect.center = (625, 450)                                                 
                 return                      
-            current_room[2] -= 1
-            player.right = ROOM_WIDTH
+            current_room_coords[2] -= 1
+            player_rect.right = SCREEN_WIDTH
         else:
-            player.left = 0
+            player_rect.left = 0
 
 def update_goblins(dt):
     """Move goblins toward the player in the Forest Path."""
-    room_key = tuple(current_room)
+    room_key = tuple(current_room_coords)
     state = goblin_rooms.get(room_key)
     if not state:
         return
-    if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_visible:
+    if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active:
         return
     global goblin_contact_cooldown, health
 
@@ -4061,21 +4061,21 @@ def update_goblins(dt):
             continue
         gx = goblin["x"] + w / 2
         gy = goblin["y"] + h / 2
-        dx = player.centerx - gx
-        dy = player.centery - gy
+        dx = player_rect.centerx - gx
+        dy = player_rect.centery - gy
         dist = math.hypot(dx, dy)
         if dist <= 1:
             continue
         step = speed * dt_sec
         goblin["x"] += (dx / dist) * step
         goblin["y"] += (dy / dist) * step
-        goblin["x"] = max(0, min(ROOM_WIDTH - w, goblin["x"]))
-        goblin["y"] = max(0, min(ROOM_HEIGHT - h, goblin["y"]))
+        goblin["x"] = max(0, min(SCREEN_WIDTH - w, goblin["x"]))
+        goblin["y"] = max(0, min(SCREEN_HEIGHT - h, goblin["y"]))
 
                         
         goblin_rect = pygame.Rect(goblin["x"], goblin["y"], w, h)
                                                          
-        if not compiler_quest_active and goblin_rect.colliderect(player) and goblin_contact_cooldown <= 0:
+        if not compiler_quest_active and goblin_rect.colliderect(player_rect) and goblin_contact_cooldown <= 0:
             health = max(0, health - GOBLIN_CONTACT_DAMAGE)
             goblin_contact_cooldown = 0.75
             set_message(f"-{GOBLIN_CONTACT_DAMAGE} HP (Goblin)", (255, 80, 80), 1.0)
@@ -4088,7 +4088,7 @@ def update_npcs(dt):
     NPCs also avoid colliding with invisible barriers.
     """
     dt_sec = dt / 1000.0
-    room_key = tuple(current_room)
+    room_key = tuple(current_room_coords)
     
                                                           
     room_info = room_data.get(room_key, {})
@@ -4103,7 +4103,7 @@ def update_npcs(dt):
             continue
 
                                                             
-        px, py = player.centerx, player.centery
+        px, py = player_rect.centerx, player_rect.centery
         dist_to_player = math.hypot(px - (state["x"] + 0), py - (state["y"] + 0))
         if state.get("talking") or dist_to_player <= state.get("stop_distance", 120):
             state["target"] = None
@@ -4116,8 +4116,8 @@ def update_npcs(dt):
             tx = state["home_x"] + math.cos(angle) * r
             ty = state["home_y"] + math.sin(angle) * r
                                   
-            tx = max(0, min(ROOM_WIDTH - 32, tx))
-            ty = max(0, min(ROOM_HEIGHT - 32, ty))
+            tx = max(0, min(SCREEN_WIDTH - 32, tx))
+            ty = max(0, min(SCREEN_HEIGHT - 32, ty))
             state["target"] = (tx, ty)
         else:
             tx, ty = state["target"]
@@ -4154,11 +4154,11 @@ def update_npcs(dt):
 
 def update_timebandits(dt):
     """Move Time Bandits toward the player in configured cyber rooms."""
-    room_key = tuple(current_room)
+    room_key = tuple(current_room_coords)
     state = timebandit_rooms.get(room_key)
     if not state:
         return
-    if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_visible:
+    if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active:
         return
     global goblin_contact_cooldown, health, player_electrified_timer
 
@@ -4178,8 +4178,8 @@ def update_timebandits(dt):
                                                                      
                     miniboss_w = int(default_w * 3)
                     miniboss_h = int(default_h * 3)
-                    miniboss_x = ROOM_WIDTH // 2 - miniboss_w // 2
-                    miniboss_y = ROOM_HEIGHT // 2 - miniboss_h // 2
+                    miniboss_x = SCREEN_WIDTH // 2 - miniboss_w // 2
+                    miniboss_y = SCREEN_HEIGHT // 2 - miniboss_h // 2
                     miniboss = {
                         "x": float(miniboss_x),
                         "y": float(miniboss_y),
@@ -4217,16 +4217,16 @@ def update_timebandits(dt):
         h = tb.get("h", default_h)
         gx = tb["x"] + w / 2
         gy = tb["y"] + h / 2
-        dx = player.centerx - gx
-        dy = player.centery - gy
+        dx = player_rect.centerx - gx
+        dy = player_rect.centery - gy
         dist = math.hypot(dx, dy)
         if dist <= 1:
             continue
         step = speed * dt_sec
         tb["x"] += (dx / dist) * step
         tb["y"] += (dy / dist) * step
-        tb["x"] = max(0, min(ROOM_WIDTH - w, tb["x"]))
-        tb["y"] = max(0, min(ROOM_HEIGHT - h, tb["y"]))
+        tb["x"] = max(0, min(SCREEN_WIDTH - w, tb["x"]))
+        tb["y"] = max(0, min(SCREEN_HEIGHT - h, tb["y"]))
 
                                                                                        
         tb_rect = pygame.Rect(tb["x"], tb["y"], int(w), int(h))
@@ -4235,7 +4235,7 @@ def update_timebandits(dt):
                                                                                  
             tb["contact_cooldown"] = max(0.0, tb.get("contact_cooldown", 0.0) - dt_sec)
                                                   
-            if not compiler_quest_active and tb_rect.colliderect(player) and tb.get("contact_cooldown", 0.0) <= 0.0:
+            if not compiler_quest_active and tb_rect.colliderect(player_rect) and tb.get("contact_cooldown", 0.0) <= 0.0:
                 health = max(0, health - tb_damage)
                 player_electrified_timer = 3.0                             
                 tb["contact_cooldown"] = 0.75
@@ -4274,10 +4274,10 @@ def update_timebandits(dt):
                 b["x"] -= nx * push
                 b["y"] -= ny * push
                        
-                a["x"] = max(0, min(ROOM_WIDTH - aw, a["x"]))
-                a["y"] = max(0, min(ROOM_HEIGHT - ah, a["y"]))
-                b["x"] = max(0, min(ROOM_WIDTH - bw, b["x"]))
-                b["y"] = max(0, min(ROOM_HEIGHT - bh, b["y"]))
+                a["x"] = max(0, min(SCREEN_WIDTH - aw, a["x"]))
+                a["y"] = max(0, min(SCREEN_HEIGHT - ah, a["y"]))
+                b["x"] = max(0, min(SCREEN_WIDTH - bw, b["x"]))
+                b["y"] = max(0, min(SCREEN_HEIGHT - bh, b["y"]))
 
                                                                            
     for tb in state["active"]:
@@ -4297,7 +4297,7 @@ def update_timebandits(dt):
                              
                 tb["swinging"] = True
                 tb["swing_angle"] = 0.0
-                tb["swing_dir"] = "left" if player.centerx < (tb["x"] + tb.get("w", default_w)/2) else "right"
+                tb["swing_dir"] = "left" if player_rect.centerx < (tb["x"] + tb.get("w", default_w)/2) else "right"
                 tb["swing_cooldown"] = random.uniform(2.0, 4.0)
         else:
                                                              
@@ -4332,7 +4332,7 @@ def update_timebandits(dt):
                 sr = pygame.Rect(*tb["sword_rect"]) if tb.get("sword_rect") else None
                                                                                                     
                 miniboss_rect = pygame.Rect(int(tb["x"]), int(tb["y"]), int(w), int(h))
-                if (sr and player.colliderect(sr)) or player.colliderect(miniboss_rect):
+                if (sr and player_rect.colliderect(sr)) or player_rect.colliderect(miniboss_rect):
                     dmg = tb.get("damage", 5)
                     health = max(0, health - dmg)
                     set_message(f"-{dmg} HP (Miniboss Sword)", (255, 80, 80), 1.5)
@@ -4343,27 +4343,27 @@ def pickup_items():
     # gold herbs potions keys keycards and timeshards are processed here
     # sometimes this logic had bugs so we try to be defensive and not crash
     """Handle item collection."""
-    global message, message_timer, message_color, health, player_speed_boost_timer
+    global hud_message, hud_message_timer, hud_message_color, health, player_speed_boost_timer
     
     for rect, x, y in gold_items:
-        if player.colliderect(rect):
+        if player_rect.colliderect(rect):
             inventory["Gold"] += 10
-            collected_gold.add((*current_room, x, y))
+            collected_gold.add((*current_room_coords, x, y))
             set_message("+10 Gold", (255, 215, 0), 1.5)
     
     for rect, x, y in herbs:
-        if player.colliderect(rect):
+        if player_rect.colliderect(rect):
             inventory["Herbs"] += 1
-            collected_herbs.add((*current_room, x, y))
+            collected_herbs.add((*current_room_coords, x, y))
             set_message("+1 Herb", (0, 255, 0), 1.5)
     
     for rect, x, y in potions:
-        if player.colliderect(rect):
+        if player_rect.colliderect(rect):
             inventory["Health Potions"] += 1
-            collected_potions.add((*current_room, x, y))
+            collected_potions.add((*current_room_coords, x, y))
 
 
-            if tuple(current_room) == (0, 1, 2):
+            if tuple(current_room_coords) == (0, 1, 2):
                 global health, player_speed_boost_timer
                 player_speed_boost_timer = 8.0
                 health = min(max_health, health + 30)
@@ -4372,7 +4372,7 @@ def pickup_items():
                 set_message("+1 Health Potion", (255, 0, 0), 1.5)
     
                                       
-    room_key = tuple(current_room)
+    room_key = tuple(current_room_coords)
     room_info = room_data.get(room_key, {})
     for item in list(room_info.get("items", [])):
         itype = item.get("type")
@@ -4388,7 +4388,7 @@ def pickup_items():
         else:
             item_rect = pygame.Rect(item.get("x", 0), item.get("y", 0), 25, 25)
 
-        if player.colliderect(item_rect.inflate(20, 20)):
+        if player_rect.colliderect(item_rect.inflate(20, 20)):
             key_tuple = (room_key[0], room_key[1], room_key[2], item["x"], item["y"])
                                           
             if itype == "key" and key_tuple not in collected_keys:
@@ -4431,8 +4431,8 @@ def pickup_items():
 
 def set_message(text, color, duration):
     """Helper to queue on-screen messages safely."""
-    global message, message_timer, message_color
-    message, message_color, message_timer = text, color, duration
+    global hud_message, hud_message_timer, hud_message_color
+    hud_message, hud_message_color, hud_message_timer = text, color, duration
 
 def handle_interaction():
     # handle_interaction is called when the player presses the interact key
@@ -4442,18 +4442,18 @@ def handle_interaction():
     global dialogue_active, current_dialogue, dialogue_index, upgrade_shop_visible
     global safe_visible, safe_input, safe_unlocked, maze_visible, cyber_shop_visible
     
-    room_key = tuple(current_room)
+    room_key = tuple(current_room_coords)
     
                                 
     if room_key == (0, 0, 1):
         for inter_obj in interactive_objects:
-            if inter_obj["type"] == "anvil" and player.colliderect(inter_obj["rect"].inflate(50, 50)):
+            if inter_obj["type"] == "anvil" and player_rect.colliderect(inter_obj["rect"].inflate(50, 50)):
                 upgrade_shop_visible = True
                 return
     
                     
     for npc_rect in npcs:
-        if player.colliderect(npc_rect.inflate(50, 50)):
+        if player_rect.colliderect(npc_rect.inflate(50, 50)):
             for i, npc in enumerate(room_data.get(room_key, {}).get("npcs", [])):
                                                           
                 key = f"{room_key[0]}_{room_key[1]}_{room_key[2]}_{npc.get('id')}_{i}"
@@ -4514,7 +4514,7 @@ def handle_interaction():
 
 
     for inter_obj in interactive_objects:
-        if player.colliderect(inter_obj["rect"].inflate(50, 50)):
+        if player_rect.colliderect(inter_obj["rect"].inflate(50, 50)):
             obj_type = inter_obj["type"]
             
             if obj_type == "cage" and room_key == (0, 1, 0):
@@ -4580,7 +4580,7 @@ def handle_interaction():
    
     if room_key == (1, 0, 1):  
         for inter_obj in interactive_objects:
-            if inter_obj["type"] == "shop" and player.colliderect(inter_obj["rect"].inflate(50, 50)):
+            if inter_obj["type"] == "shop" and player_rect.colliderect(inter_obj["rect"].inflate(50, 50)):
                 cyber_shop_visible = True
                 return
 
@@ -4588,13 +4588,13 @@ def give_herbs_to_collector():
     """Handle G key to give herbs to the herb collector."""
     global dialogue_active, current_dialogue, dialogue_index
     
-    room_key = tuple(current_room)
+    room_key = tuple(current_room_coords)
     if room_key != (0, 2, 1):                   
         return
     
                                   
     for npc_rect in npcs:
-        if player.colliderect(npc_rect.inflate(50, 50)):
+        if player_rect.colliderect(npc_rect.inflate(50, 50)):
             for npc in room_data.get(room_key, {}).get("npcs", []):
                 if npc["id"] == "herbcollector":
                     if inventory["Herbs"] >= 3 and not quests["collect_herbs"]["complete"]:
@@ -4740,9 +4740,9 @@ while running:
         
         elif event.type == pygame.KEYDOWN:
             if game_state == "playing":
-                if race_visible:
+                if race_active:
                     if event.key == pygame.K_ESCAPE:
-                        race_visible = False
+                        race_active = False
                         set_message("Race exited.", (200, 200, 200), 1.2)
                     elif event.key == pygame.K_r:
                         _reset_race_car()
@@ -4816,28 +4816,28 @@ while running:
                     give_herbs_to_collector()
                 
                
-                elif event.key == pygame.K_SPACE and not upgrade_shop_visible and not dialogue_active and not safe_visible and not maze_visible and not race_visible:
+                elif event.key == pygame.K_SPACE and not upgrade_shop_visible and not dialogue_active and not safe_visible and not maze_visible and not race_active:
                     if shoot_bullet():
                         set_message("Pew!", (255, 255, 0), 0.5)
-                    elif not has_weapon:
+                    elif not player_has_weapon:
                         set_message("You need a weapon! Visit the blacksmith.", (255, 200, 0), 2.0)
-                    elif is_reloading:
+                    elif reloading_active:
                         set_message("Reloading...", (255, 200, 0), 0.5)
-                    elif ammo == 0:
+                    elif current_ammo == 0:
                         set_message("Out of ammo! Buy more from blacksmith.", (255, 0, 0), 1.0)
                 
                 
-                elif event.key == pygame.K_r and has_weapon and not is_reloading and ammo < max_ammo:
+                elif event.key == pygame.K_r and player_has_weapon and not reloading_active and current_ammo < max_ammo_count:
                                                                             
                     if inventory.get("Ammo Packs", 0) > 0:
-                        is_reloading = True
-                        reload_time = 2.0
+                        reloading_active = True
+                        reload_timer = 2.0
                         set_message("Reloading...", (255, 200, 0), 1.0)
                     else:
                         set_message("No ammo packs! Buy some from the blacksmith.", (255, 100, 0), 1.5)
                 
                                             
-                elif event.key == pygame.K_ESCAPE and not upgrade_shop_visible and not safe_visible and not maze_visible and not race_visible:
+                elif event.key == pygame.K_ESCAPE and not upgrade_shop_visible and not safe_visible and not maze_visible and not race_active:
                     game_state = "main_menu"
             
                                                                     
@@ -4862,11 +4862,11 @@ while running:
                     
         
         
-        if tuple(current_room) == (0, 2, 0) and not boss_initialized:
+        if tuple(current_room_coords) == (0, 2, 0) and not boss_initialized:
             init_boss()
             boss_initialized = True
         
-        if tuple(current_room) == (1, 2, 2) and not boss2_initialized:
+        if tuple(current_room_coords) == (1, 2, 2) and not boss2_initialized:
             init_boss2()
             boss2_initialized = True
         
@@ -4875,16 +4875,16 @@ while running:
         mv_y = (keys_pressed[pygame.K_s] or keys_pressed[pygame.K_DOWN]) - (keys_pressed[pygame.K_w] or keys_pressed[pygame.K_UP])
         
        
-        if mouse_x > player.centerx + 10:  
-            player_direction = "right"
-        elif mouse_x < player.centerx - 10:
-            player_direction = "left"
+        if mouse_x > player_rect.centerx + 10:  
+            player_facing = "right"
+        elif mouse_x < player_rect.centerx - 10:
+            player_facing = "left"
         
         
-        if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or safe_visible or maze_visible or race_visible:
+        if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or safe_visible or maze_visible or race_active:
             mv_x, mv_y = 0, 0
 
-        if race_visible:
+        if race_active:
             update_race_minigame(dt, keys_pressed)
         
        
@@ -4894,7 +4894,7 @@ while running:
         speed_bonus = 3 if player_speed_boost_timer > 0 else 0
         speed_penalty = 0.5 if player_electrified_timer > 0 else 1.0                                        
         
-        dx, dy = mv_x * (player_speed + speed_bonus) * speed_penalty, mv_y * (player_speed + speed_bonus) * speed_penalty
+        dx, dy = mv_x * (player_move_speed + speed_bonus) * speed_penalty, mv_y * (player_move_speed + speed_bonus) * speed_penalty
         
                                                                        
         update_goblins(dt)
@@ -4902,15 +4902,15 @@ while running:
         update_npcs(dt)
         
                                        
-        if tuple(current_room) == (0, 2, 0) and boss and boss["alive"]:
+        if tuple(current_room_coords) == (0, 2, 0) and boss and boss["alive"]:
             update_boss(dt)
                                               
-        if tuple(current_room) == (1, 2, 2) and boss2 and boss2.get("alive", False):
+        if tuple(current_room_coords) == (1, 2, 2) and boss2 and boss2.get("alive", False):
             update_boss2(dt)
             check_boss2_hit()
         
                    
-        draw_room(screen, *current_room)
+        draw_room(screen, *current_room_coords)
         
                               
         collision_check(dx, dy)
@@ -4924,25 +4924,25 @@ while running:
             respawn_player()
         
                             
-        if tuple(current_room) == (0, 2, 0) and boss_defeated and not boss_drop_collected:
+        if tuple(current_room_coords) == (0, 2, 0) and boss_defeated and not boss_drop_collected:
             collect_boss_drops()
         
                                
-        if shoot_cooldown > 0:
-            shoot_cooldown = max(0, shoot_cooldown - dt / 1000.0)
+        if shoot_cooldown_timer > 0:
+            shoot_cooldown_timer = max(0, shoot_cooldown_timer - dt / 1000.0)
         
-        if is_reloading:
-            reload_time -= dt / 1000.0
-            if reload_time <= 0:
+        if reloading_active:
+            reload_timer -= dt / 1000.0
+            if reload_timer <= 0:
                                                                 
                 if inventory.get("Ammo Packs", 0) > 0:
                     inventory["Ammo Packs"] -= 1
-                    ammo = max_ammo
+                    current_ammo = max_ammo_count
                 else:
                                                
                     set_message("Reload failed: no ammo packs.", (255, 100, 0), 1.5)
-                is_reloading = False
-                reload_time = 0.0
+                reloading_active = False
+                reload_timer = 0.0
         
         update_bullets(dt)
         
@@ -4960,8 +4960,8 @@ while running:
             draw_drones(screen)
         except Exception:
             pass
-        draw_player(screen, player, dt, player_moving)
-        draw_player_pointer(screen, player)
+        draw_player(screen, player_rect, dt, player_moving)
+        draw_player_pointer(screen, player_rect)
         
         
         draw_bullets(screen)
@@ -4971,7 +4971,7 @@ while running:
             
                  
         draw_hud(screen) 
-        draw_minimap(screen, *current_room)
+        draw_minimap(screen, *current_room_coords)
         draw_quest_log(screen)
         draw_message(screen)
         draw_dialogue(screen)
@@ -4982,9 +4982,9 @@ while running:
 
         if hud_visible:
             draw_quick_inventory(screen)
-        if DEV_MODE:
-            coord_surf = small_font.render(f"{player.x:.0f}, {player.y:.0f}", True, (255, 255, 0))
-            screen.blit(coord_surf, (10, ROOM_HEIGHT - 20))
+        if DEBUG_MODE:
+            coord_surf = small_font.render(f"{player_rect.x:.0f}, {player_rect.y:.0f}", True, (255, 255, 0))
+            screen.blit(coord_surf, (10, SCREEN_HEIGHT - 20))
         if safe_visible:
             buttons, clear_rect, close_rect = draw_safe_puzzle(screen)
         
@@ -5008,35 +5008,35 @@ while running:
                 set_message("Compiler display error.", (255, 0, 0), 2.0)
                 print("draw_compiler_ui error:", e)
 
-        if race_visible:
+        if race_active:
             draw_race_minigame(screen)
         
        
         near_object = False
         for inter_obj in interactive_objects:
-            if player.colliderect(inter_obj["rect"].inflate(50, 50)):
+            if player_rect.colliderect(inter_obj["rect"].inflate(50, 50)):
                 near_object = True
                 break
         for npc_rect in npcs:
-            if player.colliderect(npc_rect.inflate(50, 50)):
+            if player_rect.colliderect(npc_rect.inflate(50, 50)):
                 near_object = True
                 break
         
-        if near_object and not dialogue_active and not upgrade_shop_visible and not safe_visible and not maze_visible and not cipher_visible and not race_visible:
+        if near_object and not dialogue_active and not upgrade_shop_visible and not safe_visible and not maze_visible and not cipher_visible and not race_active:
             hint = small_font.render("Press F to Interact", True, (255, 255, 255))
-            screen.blit(hint, (player.centerx - 40, player.top - 25))
+            screen.blit(hint, (player_rect.centerx - 40, player_rect.top - 25))
             
                                              
-            room_key = tuple(current_room)
+            room_key = tuple(current_room_coords)
             if room_key == (0, 2, 1):
                 for npc in room_data.get(room_key, {}).get("npcs", []):
                     if npc["id"] == "herbcollector" and inventory["Herbs"] >= 3 and not quests["collect_herbs"]["complete"]:
                         give_hint = small_font.render("Press G to Give Herbs", True, (0, 255, 0))
-                        screen.blit(give_hint, (player.centerx - 50, player.top - 45))
+                        screen.blit(give_hint, (player_rect.centerx - 50, player_rect.top - 45))
         
         
-        if message_timer > 0:
-            message_timer = max(0, message_timer - dt / 1000.0)
+        if hud_message_timer > 0:
+            hud_message_timer = max(0, hud_message_timer - dt / 1000.0)
     
     pygame.display.flip()
 
