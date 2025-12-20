@@ -28,8 +28,8 @@ SCREEN_HEIGHT = 800
 MAP_COLS = 3
 MAP_ROWS = 3
 TOTAL_LEVELS = 3
-DEBUG_MODE = True # this is for debugging and adding invisible barriers so that we can see where they are
-DEBUG_SKIP_LEVEL2 = True  
+DEBUG_MODE = False # this is for debugging and adding invisible barriers so that we can see where they are
+DEBUG_SKIP_LEVEL2 = False  
 # Level 2 spawn point (consistent spawn when entering Level 2)
 LEVEL2_SPAWN_POINT = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
 # ------------ LEVEL 2 (CYBERPUNK) ------------
@@ -701,19 +701,21 @@ race_car_state = {"x": 0.0, "y": 0.0, "w": 22, "h": 12, "speed": 220.0}
 RACE_TRACK_BG = "backgrounds/racetrack.png"
 # Edit these to match obstacles in the track image (x, y, w, h).
 RACE_BOUNDARY_BOXES = [
-    (190, 160, 40, 120),
-    (570, 520, 40, 120),
+    
 ]
 
 def _race_track_rects():
     outer = pygame.Rect(140, 120, 520, 560)
-    inner = outer.inflate(-240, -240)
+    # reduce the inner inflation so the drivable track is wider and less likely
+    # to trigger 'Off the road' when the car visually sits inside the track.
+    inner = outer.inflate(-160, -160)
     start_line = pygame.Rect(SCREEN_WIDTH // 2 - 70, outer.bottom - 24, 140, 12)
     checkpoint = pygame.Rect(SCREEN_WIDTH // 2 - 70, outer.top + 12, 140, 12)
     return outer, inner, start_line, checkpoint
 
 def _race_boundary_rects():
-    return [pygame.Rect(x, y, w, h) for x, y, w, h in RACE_BOUNDARY_BOXES]
+    # Boundaries removed: return an empty list so the race has no crash boxes.
+    return []
 
 def _reset_race_car():
     global race_car_state, race_checkpoint_reached
@@ -760,11 +762,8 @@ def update_race_minigame(dt, keys_pressed):
             set_message("Crashed! Race failed.", (255, 120, 120), 2.0)
             return
 
-    if not outer.contains(car_rect) or inner.colliderect(car_rect):
-        race_active = False
-        set_message("Off the road! Race failed.", (255, 120, 120), 2.0)
-        return
-
+   
+    car_center = car_rect.center
     if race_warning_timer > 0.0:
         race_warning_timer = max(0.0, race_warning_timer - dt_sec)
 
@@ -1189,6 +1188,21 @@ def draw_drones(surface):
         pygame.draw.polygon(radar_surf, (255, 0, 0, 60), [(cx, cy), left, right])
         pygame.draw.polygon(radar_surf, (255, 0, 0, 160), [(cx, cy), left, right], 2)
         surface.blit(radar_surf, (0,0))
+        # Draw boss HP bar when this drone is a boss
+        if d.get("is_boss") and d.get("hp") is not None and d.get("alive", True):
+            try:
+                bar_w = 300
+                bar_h = 18
+                bx = SCREEN_WIDTH // 2 - bar_w // 2
+                by = 16
+                hp_frac = max(0.0, min(1.0, float(d.get("hp", 0)) / float(d.get("hp", 1))))
+                pygame.draw.rect(surface, (50, 50, 50), (bx, by, bar_w, bar_h))
+                pygame.draw.rect(surface, (255, 0, 0), (bx, by, int(bar_w * hp_frac), bar_h))
+                pygame.draw.rect(surface, (255, 255, 255), (bx, by, bar_w, bar_h), 2)
+                label = small_font.render(f"Drone Boss: {int(max(0, d.get('hp',0)))}/{int(d.get('hp',1))}", True, (255,255,255))
+                surface.blit(label, (bx + 8, by - 2))
+            except Exception:
+                pass
 
 def deploy_enemies_from_drone(drone, count):
     """Deploy `count` time-bandit enemies near the drone's position into the room's active list.
@@ -2604,7 +2618,6 @@ def update_bullets(dt):
                         bullets_to_remove.append(i)
                     break
 
-            # If all waves finished and none active, spawn a keycard in this room once
             if not any(tb.get("alive", True) for tb in tb_state["active"]) and tb_state["wave_index"] >= len(tb_state["waves"]) and not tb_state.get("key_given"):
                 room_info = room_data.get(room_key, {})
                 items = room_info.get("items")
@@ -2618,6 +2631,37 @@ def update_bullets(dt):
                         pass
                 tb_state["key_given"] = True
                 set_message("A Keycard has appeared!", (255, 215, 0), 3.0)
+        
+        for d in drones:
+            if tuple(d.get("room_key")) != room_key:
+                continue
+            
+            dr = pygame.Rect(int(d.get("x", 0)), int(d.get("y", 0)), int(d.get("w", 48)), int(d.get("h", 48)))
+            if dr.collidepoint(bullet["x"], bullet["y"]):
+                
+                if d.get("hp") is not None:
+                    d["hp"] -= bullet.get("damage", 0)
+                    bullets_to_remove.append(i)
+                    if d["hp"] <= 0 and not d.get("loot_given"):
+                        d["loot_given"] = True
+                        d["alive"] = False
+                        
+                        room_info = room_data.get(room_key, {})
+                        if room_info is not None:
+                            cx = int(d.get("x", 0) + d.get("w", 48) / 2)
+                            cy = int(d.get("y", 0) + d.get("h", 48) / 2)
+                            room_items = room_info.setdefault("items", [])
+                            room_items.append({
+                                "type": "keycard",
+                                "x": cx - 16,
+                                "y": cy - 16,
+                                "id": f"keycard_drone_{room_key[1]}_{room_key[2]}"
+                            })
+                        set_message("Drone Boss defeated! A Keycard has spawned.", (0, 255, 0), 3.0)
+                else:
+                    
+                    bullets_to_remove.append(i)
+                break
     
    
     if tuple(current_room_coords) == (0, 2, 0) and boss and boss["alive"]:
