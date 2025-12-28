@@ -28,8 +28,8 @@ SCREEN_HEIGHT = 800
 MAP_COLS = 3
 MAP_ROWS = 3
 TOTAL_LEVELS = 3
-DEBUG_MODE = False # this is for debugging and adding invisible barriers so that we can see where they are
-DEBUG_SKIP_LEVEL2 = False  
+DEBUG_MODE = True # this is for debugging and adding invisible barriers so that we can see where they are
+DEBUG_SKIP_LEVEL2 = True  
 # Level 2 spawn point (consistent spawn when entering Level 2)
 LEVEL2_SPAWN_POINT = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
 # ------------ LEVEL 2 (CYBERPUNK) ------------
@@ -45,10 +45,10 @@ LEVEL_2_BG_MAP = {
     (2,0): "core_reactor_room",
     (2,1): "time_gateway",
     (2,2): "ai_control_room",
-}
-        
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        # Level 3 rooms are defined separately in LEVEL_3_BG_MAP (see below)
+    }
 pygame.display.set_caption("Chronicles of Time")
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 clock = pygame.time.Clock()
 font = pygame.font.SysFont(None, 30)
 title_font = pygame.font.SysFont(None, 70)
@@ -187,6 +187,25 @@ ASSETS_DIR = "assets"
 SOUNDS_DIR = os.path.join(ASSETS_DIR, "sounds")
 image_cache = {}
 sound_cache = {}
+
+# Level 3 background map (structured similarly to `LEVEL_2_BG_MAP`)
+# Keys are (row, col) so you can change the background/scene name easily.
+LEVEL_3_BG_MAP = {
+    # Top row (row=0)
+    (0, 0): "Jungle Path",
+    (0, 1): "Waterfall Cave",
+    (0, 2): "Forgotten City",
+
+    # Middle row (row=1)
+    (1, 0): "Lava Chambers",
+    (1, 1): "Ruins Plaza",
+    (1, 2): "Temporal Altar",
+
+    # Bottom row (row=2) - temple entrance should be bottom-left
+    (2, 0): "Temple Entrance",
+    (2, 1): "Hall of Echoes",
+    (2, 2): "Timeless Sanctuary",
+}
 
 def load_sound(name):
     """Load a sound if it exists (tries wav/mp3/ogg), otherwise return None (safe no-op)."""
@@ -353,6 +372,12 @@ def load_smart_bg(level, row, col):
         return None
     elif level == 1:                                        
         filename = LEVEL_2_BG_MAP.get((row, col))
+        if filename:
+            return load_image(f"backgrounds/{filename}.png", SCREEN_WIDTH, SCREEN_HEIGHT)
+        return None
+    elif level == 2:
+        # Use LEVEL_3_BG_MAP which maps (row, col) -> scene name
+        filename = LEVEL_3_BG_MAP.get((row, col))
         if filename:
             return load_image(f"backgrounds/{filename}.png", SCREEN_WIDTH, SCREEN_HEIGHT)
         return None
@@ -833,6 +858,7 @@ in_combat = False
 combat_enemies = []
 give_herbs_active = False
 cyber_shop_visible = False   
+time_guide_offer_level3 = False
 
            
 hud_message = ""
@@ -1024,6 +1050,9 @@ def update_drones(dt):
     """Update all drones: movement, scanning, and deployment when player detected."""
     dt_sec = dt / 1000.0
     room_key = tuple(current_room_coords)
+    # allow the drone updater to trigger proximity dialogue for the Time Guide
+    global current_dialogue, dialogue_active, dialogue_index, time_guide_offer_level3
+    
     for d in drones:
         if tuple(d["room_key"]) != room_key:
             continue
@@ -1490,6 +1519,22 @@ room_data = {
                 "interactive": []
                 , "npcs": [],
                   "items": []},
+    # --- Level 3: Ancient Ruins (Lost Civilization) ---
+    # Layout (rows top->bottom 0..2, cols left->right 0..2)
+    (2, 0, 0): {"name": "Jungle Path",            "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 0, 1): {"name": "Waterfall Cave",         "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 0, 2): {"name": "Forgotten City",         "objects": [], "interactive": [], "npcs": [], "items": []},
+
+    (2, 1, 0): {"name": "Lava Chambers",          "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 1, 1): {"name": "Ruins Plaza",           "objects": [], "interactive": [], "npcs": [], "items": []},
+
+    # right column holds the final locations away from the entrance
+    (2, 1, 2): {"name": "Temporal Altar",        "objects": [], "interactive": [], "npcs": [], "items": []},
+
+    # bottom row (row=2): temple entrance is bottom-left
+    (2, 2, 0): {"name": "Temple Entrance",        "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 2, 1): {"name": "Hall of Echoes",        "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 2, 2): {"name": "Timeless Sanctuary",    "objects": [], "interactive": [], "npcs": [], "items": []},
 }
 
 goblin_states = {}
@@ -2010,10 +2055,13 @@ def enter_level_3():
     global collected_gold, collected_herbs, collected_potions, collected_keys, collected_timeshards
     global boss_defeated, boss_drop_collected
     try:
+        # Spawn at Temple Entrance (bottom-left of the Level 3 grid)
         current_room_coords[0] = 2
-        current_room_coords[1] = 1
-        current_room_coords[2] = 1
-        player_rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+        # bottom-left is (2,2,0)
+        current_room_coords[1] = 2
+        current_room_coords[2] = 0
+        # place player near the bottom-left of the screen so they appear at the entrance
+        player_rect.center = (SCREEN_WIDTH // 4, (SCREEN_HEIGHT * 3) // 4)
 
         # keep gold and keycards
         keep_gold = inventory.get("Gold", 0)
@@ -2040,9 +2088,9 @@ def enter_level_3():
 
         quests.clear()
         quests.update({
-            "explore_future": {"active": True, "complete": False, "description": "Explore the Future Level"}
+            "explore_ancient_ruins": {"active": True, "complete": False, "description": "Explore the Ancient Ruins"}
         })
-        set_message("Welcome to Level 3! (Placeholder)", (200, 180, 255), 5.0)
+        set_message("Welcome to Level 3 – The Ancient Ruins!", (200, 180, 255), 5.0)
     except Exception:
         tb = traceback.format_exc()
         print("Error entering level 3:\n", tb)
@@ -4484,7 +4532,7 @@ def handle_interaction():
     # this is where dialogues shops and puzzles are triggered
     """Handle F key interactions."""
     global dialogue_active, current_dialogue, dialogue_index, upgrade_shop_visible
-    global safe_visible, safe_input, safe_unlocked, maze_visible, cyber_shop_visible
+    global safe_visible, safe_input, safe_unlocked, maze_visible, cyber_shop_visible, time_guide_offer_level3
     
     room_key = tuple(current_room_coords)
     
@@ -4532,9 +4580,34 @@ def handle_interaction():
                         # Other NPCs use normal dialogue
                         dialogue_key = (room_key[0], room_key[1], room_key[2], npc["id"])
                         if dialogue_key in npc_dialogues:
-                            current_dialogue = npc_dialogues[dialogue_key]
-                            dialogue_active = True
-                            dialogue_index = 0
+                            # Special handling for the Time Guide NPC in Level 2
+                            if npc.get("id") == "time_guide":
+                                required_keycards = 6
+                                required_shards = 2
+                                have_keycards = inventory.get("Keycards", 0)
+                                have_shards = inventory.get("Time Shards", 0)
+                                # debug info to help trace why offer may not appear
+                                try:
+                                    print(f"[TIME_GUIDE] check - Keycards={have_keycards}, TimeShards={have_shards}")
+                                except Exception:
+                                    pass
+                                if have_keycards >= required_keycards and have_shards >= required_shards:
+                                    current_dialogue = [
+                                        "Time Guide: Congratulations — you have met the requirements to go to Level 3.",
+                                        "Time Guide: If you wish, press Y to travel to Level 3 now."
+                                    ]
+                                    dialogue_active = True
+                                    dialogue_index = 0
+                                    time_guide_offer_level3 = True
+                                    set_message("Time Guide: Press Y to travel to Level 3.", (120, 255, 120), 4.0)
+                                else:
+                                    current_dialogue = npc_dialogues[dialogue_key]
+                                    dialogue_active = True
+                                    dialogue_index = 0
+                            else:
+                                current_dialogue = npc_dialogues[dialogue_key]
+                                dialogue_active = True
+                                dialogue_index = 0
 
                                                         
                             if npc["id"] == "elder" and quests.get("talk_to_elder", {}).get("complete") == False:
@@ -4592,11 +4665,28 @@ def handle_interaction():
                     set_message("The safe is already unlocked.", (200, 200, 200), 1.5)
             
             elif obj_type == "portal" and room_key == (0, 2, 2):
-                if inventory["Keys"] >= 2:
+                # Time Portal now requires specific items to open the gateway to Level 2.
+                required_keycards = 6
+                required_shards = 2
+                have_keycards = inventory.get("Keycards", 0)
+                have_shards = inventory.get("Time Shards", 0)
+
+                missing = []
+                if have_keycards < required_keycards:
+                    missing.append(f"{required_keycards - have_keycards} Keycard(s)")
+                if have_shards < required_shards:
+                    missing.append(f"{required_shards - have_shards} Time Shard(s)")
+
+                if not missing:
+                    # requirements met -> enter Level 2
                     enter_level_2()
                 else:
-                    need = 2 - inventory["Keys"]
-                    set_message(f"You need {need} more key(s) to activate the portal!", (255, 200, 0), 2.0)
+                    # Let the (Time Guide) NPC message the player which items are missing.
+                    # Use the dialogue system so player sees the NPC-style message.
+                    current_dialogue = [f"Time Guide: You are missing {', '.join(missing)}."]
+                    dialogue_active = True
+                    dialogue_index = 0
+                    set_message("The Time Guide will open the gateway once you have the items.", (255, 200, 0), 3.0)
             elif obj_type == "datahub" and room_key == (1, 0, 2):
                                                                 
                 try:
@@ -4858,6 +4948,29 @@ while running:
                 
                 elif event.key == pygame.K_g:
                     give_herbs_to_collector()
+
+                elif event.key == pygame.K_y and time_guide_offer_level3:
+                    # Player accepted Time Guide offer to go to Level 3
+                    required_keycards = 6
+                    required_shards = 2
+                    inventory["Keycards"] = max(0, inventory.get("Keycards", 0) - required_keycards)
+                    inventory["Time Shards"] = max(0, inventory.get("Time Shards", 0) - required_shards)
+                    time_guide_offer_level3 = False
+                    # close any active dialogue and transition
+                    dialogue_active = False
+                    current_dialogue = []
+                    set_message("Time Guide: Transporting you to Level 3...", (120, 200, 255), 3.0)
+                    try:
+                        enter_level_3()
+                    except Exception as e:
+                        set_message("Error entering Level 3.", (255, 0, 0), 3.0)
+                        print("enter_level_3 error:", e)
+
+                elif event.key == pygame.K_p and DEBUG_MODE:
+                    # Dev hotkey: grant enough Keycards and Time Shards to open the gateway
+                    inventory["Keycards"] = max(inventory.get("Keycards", 0), 6)
+                    inventory["Time Shards"] = max(inventory.get("Time Shards", 0), 2)
+                    set_message("DEV: Granted 6 Keycards and 2 Time Shards.", (120, 255, 120), 3.0)
                 
                
                 elif event.key == pygame.K_SPACE and not upgrade_shop_visible and not dialogue_active and not safe_visible and not maze_visible and not race_active:
