@@ -45,7 +45,6 @@ LEVEL_2_BG_MAP = {
     (2,0): "core_reactor_room",
     (2,1): "time_gateway",
     (2,2): "ai_control_room",
-        # Level 3 rooms are defined separately in LEVEL_3_BG_MAP (see below)
     }
 pygame.display.set_caption("Chronicles of Time")
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -188,23 +187,21 @@ SOUNDS_DIR = os.path.join(ASSETS_DIR, "sounds")
 image_cache = {}
 sound_cache = {}
 
-# Level 3 background map (structured similarly to `LEVEL_2_BG_MAP`)
-# Keys are (row, col) so you can change the background/scene name easily.
+# Level 3 background map 
+
 LEVEL_3_BG_MAP = {
-    # Top row (row=0)
-    (0, 0): "Jungle Path",
-    (0, 1): "Waterfall Cave",
-    (0, 2): "Forgotten City",
 
-    # Middle row (row=1)
-    (1, 0): "Lava Chambers",
-    (1, 1): "Ruins Plaza",
-    (1, 2): "Temporal Altar",
+    (2, 0): "jungle_path",
+    (2, 1): "forgotten_city",
+    (2, 2): "waterfall_cave",
 
-    # Bottom row (row=2) - temple entrance should be bottom-left
-    (2, 0): "Temple Entrance",
-    (2, 1): "Hall of Echoes",
-    (2, 2): "Timeless Sanctuary",
+    (1, 0): "lava_chambers",
+    (1, 1): "ruins_plaza",
+    (1, 2): "temporal_altar",
+
+    (0, 0): "temple_entrance",
+    (0, 1): "hall_of_echoes",
+    (0, 2): "timeless_sanctuary",
 }
 
 def load_sound(name):
@@ -1519,22 +1516,20 @@ room_data = {
                 "interactive": []
                 , "npcs": [],
                   "items": []},
-    # --- Level 3: Ancient Ruins (Lost Civilization) ---
-    # Layout (rows top->bottom 0..2, cols left->right 0..2)
-    (2, 0, 0): {"name": "Jungle Path",            "objects": [], "interactive": [], "npcs": [], "items": []},
-    (2, 0, 1): {"name": "Waterfall Cave",         "objects": [], "interactive": [], "npcs": [], "items": []},
-    (2, 0, 2): {"name": "Forgotten City",         "objects": [], "interactive": [], "npcs": [], "items": []},
+    # Level 3: Ancient Ruins (Lost Civilization)
+    (2, 2, 0): {"name": "Jungle Path",            "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 2, 1): {"name": "Forgotten City",         "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 2, 2): {"name": "Waterfall Cave",         "objects": [], "interactive": [], "npcs": [], "items": []},
 
     (2, 1, 0): {"name": "Lava Chambers",          "objects": [], "interactive": [], "npcs": [], "items": []},
     (2, 1, 1): {"name": "Ruins Plaza",           "objects": [], "interactive": [], "npcs": [], "items": []},
 
-    # right column holds the final locations away from the entrance
     (2, 1, 2): {"name": "Temporal Altar",        "objects": [], "interactive": [], "npcs": [], "items": []},
 
     # bottom row (row=2): temple entrance is bottom-left
-    (2, 2, 0): {"name": "Temple Entrance",        "objects": [], "interactive": [], "npcs": [], "items": []},
-    (2, 2, 1): {"name": "Hall of Echoes",        "objects": [], "interactive": [], "npcs": [], "items": []},
-    (2, 2, 2): {"name": "Timeless Sanctuary",    "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 0, 0): {"name": "Temple Entrance",        "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 0, 1): {"name": "Hall of Echoes",        "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 0, 2): {"name": "Timeless Sanctuary",    "objects": [], "interactive": [], "npcs": [], "items": []},
 }
 
 goblin_states = {}
@@ -2055,12 +2050,9 @@ def enter_level_3():
     global collected_gold, collected_herbs, collected_potions, collected_keys, collected_timeshards
     global boss_defeated, boss_drop_collected
     try:
-        # Spawn at Temple Entrance (bottom-left of the Level 3 grid)
         current_room_coords[0] = 2
-        # bottom-left is (2,2,0)
-        current_room_coords[1] = 2
+        current_room_coords[1] = 0
         current_room_coords[2] = 0
-        # place player near the bottom-left of the screen so they appear at the entrance
         player_rect.center = (SCREEN_WIDTH // 4, (SCREEN_HEIGHT * 3) // 4)
 
         # keep gold and keycards
@@ -4944,7 +4936,7 @@ while running:
                     handle_interaction()
                     
                 elif event.key == pygame.K_t:
-                    enter_level_2()
+                    enter_level_3()
                 
                 elif event.key == pygame.K_g:
                     give_herbs_to_collector()
