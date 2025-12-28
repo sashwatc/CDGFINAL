@@ -4934,10 +4934,6 @@ while running:
                 
                 elif event.key == pygame.K_f:
                     handle_interaction()
-                    
-                elif event.key == pygame.K_t:
-                    enter_level_3()
-                
                 elif event.key == pygame.K_g:
                     give_herbs_to_collector()
 
