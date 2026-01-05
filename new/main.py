@@ -1521,13 +1521,20 @@ room_data = {
     (2, 2, 1): {"name": "Forgotten City",         "objects": [], "interactive": [], "npcs": [], "items": []},
     (2, 2, 2): {"name": "Waterfall Cave",         "objects": [], "interactive": [], "npcs": [], "items": []},
 
-    (2, 1, 0): {"name": "Lava Chambers",          "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 1, 0): {"name": "Lava Chambers",          "objects": [
+        {"type": "damage", "x": 0, "y": 600, "width": 800, "height": 200},
+    ], "interactive": [], "npcs": [], "items": []},
     (2, 1, 1): {"name": "Ruins Plaza",           "objects": [], "interactive": [], "npcs": [], "items": []},
 
     (2, 1, 2): {"name": "Temporal Altar",        "objects": [], "interactive": [], "npcs": [], "items": []},
 
     # bottom row (row=2): temple entrance is bottom-left
-    (2, 0, 0): {"name": "Temple Entrance",        "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 0, 0): {"name": "Temple Entrance",        "objects": [
+
+
+
+        {"type": "invisible", "x": 50, "y": 100, "width": 200, "height": 600},
+    ], "interactive": [], "npcs": [], "items": []},
     (2, 0, 1): {"name": "Hall of Echoes",        "objects": [], "interactive": [], "npcs": [], "items": []},
     (2, 0, 2): {"name": "Timeless Sanctuary",    "objects": [], "interactive": [], "npcs": [], "items": []},
 }
@@ -4806,6 +4813,7 @@ while running:
                 play_button, how_to_button, about_button = draw_main_menu()
                 if play_button.collidepoint(mouse_pos):
                     game_state = "playing"
+                    enter_level_3()
                 elif how_to_button.collidepoint(mouse_pos):
                     game_state = "how_to_play"
                 elif about_button.collidepoint(mouse_pos):
@@ -4934,6 +4942,7 @@ while running:
                 
                 elif event.key == pygame.K_f:
                     handle_interaction()
+                    
                 elif event.key == pygame.K_g:
                     give_herbs_to_collector()
 
