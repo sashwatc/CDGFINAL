@@ -1,6 +1,6 @@
                                                     
  # Arjun Tambe, Shuban Nanisetty, Charanjit Kukkadapu
-# Final Project: Chr icles of Time level 1 
+# Final Project: Chronicles of Time level 1
 #Our game features an interactive based free map in which they can interact with bosses npcs and buy stuff, they have to compelte quests in order to progress to the next level.
                                                                                                                                                                                                                  
 
@@ -205,7 +205,6 @@ LEVEL_3_BG_MAP = {
 }
 
 def load_sound(name):
-    """Load a sound if it exists (tries wav/mp3/ogg), otherwise return None (safe no-op)."""
     candidates = []
     root, ext = os.path.splitext(name)
     if ext:
@@ -1606,7 +1605,15 @@ room_data = {
         {"type": "temple_puzzle", "x": 320, "y": 320, "width": 160, "height": 140}
     ], "npcs": [], "items": []},
     (2, 0, 1): {"name": "Hall of Echoes",        "objects": [], "interactive": [], "npcs": [], "items": []},
-    (2, 0, 2): {"name": "Timeless Sanctuary",    "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 0, 2): {"name": "Timeless Sanctuary",    "objects": [{"type": "invisible", "x": 740, "y": 30, "width": 125, "height": 325},
+                                                            {"type": "invisible", "x": 500, "y": 10, "width": 325, "height": 55},
+                                                            {"type": "invisible", "x": 10, "y": 10, "width": 325, "height": 55},
+                                                            {"type": "invisible", "x": 00, "y": 0, "width": 55, "height": 325},
+                                                            {"type":"invisible","x":740,"y":450,"width":125,"height":325},
+                                                            {"type":"invisible","x":500,"y":745,"width":325,"height":55},
+                                                           {"type":"invisible","x":10,"y":745,"width":325,"height":55},
+                                                            {"type":"invisible","x":0,"y":450,"width":55,"height":325},
+                                                             ], "interactive": [], "npcs": [], "items": []},
 }
 
 goblin_states = {}
