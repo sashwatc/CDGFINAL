@@ -856,6 +856,75 @@ give_herbs_active = False
 cyber_shop_visible = False   
 time_guide_offer_level3 = False
 
+# Level 3 scene state
+temple_puzzle_visible = False
+temple_puzzle_tiles = [0, 0, 0]
+temple_puzzle_solution = [1, 3, 2]
+temple_puzzle_attempts = 0
+temple_puzzle_solved = False
+temple_gate_unlocked = False
+temple_puzzle_tile_rects = []
+
+time_slow_active = False
+time_slow_timer = 0.0
+time_slow_cooldown = 0.0
+TIME_SLOW_DURATION = 4.0
+TIME_SLOW_COOLDOWN = 8.0
+TIME_SLOW_FACTOR = 0.45
+
+jungle_trap_timer = 0.0
+jungle_traps_active = False
+jungle_cleared = False
+jungle_trap_cycle = 2.2
+jungle_trap_rects = [
+    pygame.Rect(160, 160, 90, 90),
+    pygame.Rect(540, 180, 90, 90),
+    pygame.Rect(320, 520, 110, 90),
+]
+jungle_proximity_trap = pygame.Rect(600, 520, 120, 120)
+time_spirits = []
+
+cave_entrance_revealed = False
+cave_guardians = []
+cave_relic_available = False
+cave_relic_collected = False
+cave_blocker_rect = pygame.Rect(520, 0, 280, 220)
+cave_reveal_rect = pygame.Rect(680, 80, 90, 90)
+
+crafting_visible = False
+crafting_uses_left = 3
+crafting_ready_confirmed = False
+
+lava_platform_timer = 0.0
+lava_platforms = [
+    {"base": (120, 360), "axis": "x", "amp": 160, "speed": 0.9, "size": (140, 22), "phase": 0.0},
+    {"base": (360, 280), "axis": "x", "amp": 180, "speed": 1.1, "size": (140, 22), "phase": 1.2},
+    {"base": (520, 420), "axis": "x", "amp": 160, "speed": 1.0, "size": (140, 22), "phase": 2.4},
+]
+lava_zone_rect = pygame.Rect(0, 560, SCREEN_WIDTH, 240)
+
+echoes_miniboss = None
+echoes_boss_defeated = False
+echoes_arena_locked = False
+echoes_rewards_dropped = False
+
+kael_boss = None
+kael_defeated = False
+kael_phase = 1
+
+cutscene_active = False
+cutscene_lines = []
+cutscene_index = 0
+cutscene_timer = 0.0
+cutscene_line_duration = 2.5
+cutscene_on_complete = None
+
+kael_origin_revealed = False
+timeline_restored = False
+level3_complete = False
+
+checkpoint_data = None
+
            
 hud_message = ""
 hud_message_timer = 0.0
@@ -1521,12 +1590,20 @@ room_data = {
     (2, 2, 2): {"name": "Waterfall Cave",         "objects": [], "interactive": [], "npcs": [], "items": []},
 
     (2, 1, 0): {"name": "Lava Chambers",          "objects": [], "interactive": [], "npcs": [], "items": []},
-    (2, 1, 1): {"name": "Ruins Plaza",           "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 1, 1): {"name": "Ruins Plaza",           "objects": [], "interactive": [
+        {"type": "crafting_table", "x": 330, "y": 350, "width": 140, "height": 90}
+    ], "npcs": [], "items": []},
 
-    (2, 1, 2): {"name": "Temporal Altar",        "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 1, 2): {"name": "Temporal Altar",        "objects": [
+        {"type": "altar", "x": 330, "y": 250, "width": 140, "height": 120}
+    ], "interactive": [], "npcs": [], "items": []},
 
     # bottom row (row=2): temple entrance is bottom-left
-    (2, 0, 0): {"name": "Temple Entrance",        "objects": [], "interactive": [], "npcs": [], "items": []},
+    (2, 0, 0): {"name": "Temple Entrance",        "objects": [
+        {"type": "temple_gate", "x": 740, "y": 250, "width": 40, "height": 240}
+    ], "interactive": [
+        {"type": "temple_puzzle", "x": 320, "y": 320, "width": 160, "height": 140}
+    ], "npcs": [], "items": []},
     (2, 0, 1): {"name": "Hall of Echoes",        "objects": [], "interactive": [], "npcs": [], "items": []},
     (2, 0, 2): {"name": "Timeless Sanctuary",    "objects": [{"type": "invisible", "x": 740, "y": 30, "width": 125, "height": 325},
                                                             {"type": "invisible", "x": 500, "y": 10, "width": 325, "height": 55},
@@ -2056,6 +2133,14 @@ def enter_level_3():
     global player_has_weapon, current_ammo, max_ammo_count, inventory, quests
     global collected_gold, collected_herbs, collected_potions, collected_keys, collected_timeshards
     global boss_defeated, boss_drop_collected
+    global temple_puzzle_visible, temple_puzzle_tiles, temple_puzzle_attempts, temple_puzzle_solved, temple_gate_unlocked
+    global time_slow_active, time_slow_timer, time_slow_cooldown
+    global jungle_trap_timer, jungle_traps_active, jungle_cleared, time_spirits
+    global cave_entrance_revealed, cave_guardians, cave_relic_available, cave_relic_collected
+    global crafting_visible, crafting_uses_left, crafting_ready_confirmed
+    global echoes_miniboss, echoes_boss_defeated, echoes_arena_locked, echoes_rewards_dropped
+    global kael_boss, kael_defeated, kael_phase
+    global kael_origin_revealed, timeline_restored, level3_complete
     try:
         current_room_coords[0] = 2
         current_room_coords[1] = 0
@@ -2089,6 +2174,36 @@ def enter_level_3():
         quests.update({
             "explore_ancient_ruins": {"active": True, "complete": False, "description": "Explore the Ancient Ruins"}
         })
+        temple_puzzle_visible = False
+        temple_puzzle_tiles = [0, 0, 0]
+        temple_puzzle_attempts = 0
+        temple_puzzle_solved = False
+        temple_gate_unlocked = False
+        time_slow_active = False
+        time_slow_timer = 0.0
+        time_slow_cooldown = 0.0
+        jungle_trap_timer = 0.0
+        jungle_traps_active = False
+        jungle_cleared = False
+        time_spirits = []
+        cave_entrance_revealed = False
+        cave_guardians = []
+        cave_relic_available = False
+        cave_relic_collected = False
+        crafting_visible = False
+        crafting_uses_left = 3
+        crafting_ready_confirmed = False
+        echoes_miniboss = None
+        echoes_boss_defeated = False
+        echoes_arena_locked = False
+        echoes_rewards_dropped = False
+        kael_boss = None
+        kael_defeated = False
+        kael_phase = 1
+        kael_origin_revealed = False
+        timeline_restored = False
+        level3_complete = False
+        set_checkpoint((2, 0, 0), pos=player_rect.center, health_value=health)
         set_message("Welcome to Level 3 – The Ancient Ruins!", (200, 180, 255), 5.0)
     except Exception:
         tb = traceback.format_exc()
@@ -2587,7 +2702,7 @@ def update_bullets(dt):
     # bullets travel fast and we remove them when they go offscreen
     # bullets can damage goblins timebandits and even the drone boss
     """Update bullet positions and check collisions."""
-    global active_bullets
+    global active_bullets, kael_defeated
     
     bullets_to_remove = []
     for i, bullet in enumerate(active_bullets):
@@ -2662,7 +2777,7 @@ def update_bullets(dt):
                             inventory["Gold"] += 15
                             tb["loot_given"] = True
                             set_message("+15 Gold (Time Bandit)", (255, 215, 0), 1.5)
-                        bullets_to_remove.append(i)
+                    bullets_to_remove.append(i)
                     break
 
             if not any(tb.get("alive", True) for tb in tb_state["active"]) and tb_state["wave_index"] >= len(tb_state["waves"]) and not tb_state.get("key_given"):
@@ -2670,7 +2785,6 @@ def update_bullets(dt):
                 items = room_info.get("items")
                 if items is not None:
                     items.append({"type": "keycard", "x": SCREEN_WIDTH//2 - 20, "y": SCREEN_HEIGHT//2 - 20, "id": f"keycard_timebandit_{room_key[1]}_{room_key[2]}"})
-                                                                 
                     try:
                         inventory["Gold"] += 50
                         set_message("+50 Gold (Time Bandits cleared)", (255, 215, 0), 2.5)
@@ -2678,6 +2792,59 @@ def update_bullets(dt):
                         pass
                 tb_state["key_given"] = True
                 set_message("A Keycard has appeared!", (255, 215, 0), 3.0)
+
+        if room_key == (2, 2, 0):
+            for spirit in time_spirits:
+                if not spirit.get("alive", True):
+                    continue
+                spirit_rect = pygame.Rect(spirit["x"] - 14, spirit["y"] - 14, 28, 28)
+                if spirit_rect.collidepoint(bullet["x"], bullet["y"]):
+                    spirit["hp"] -= bullet.get("damage", 0)
+                    bullets_to_remove.append(i)
+                    if spirit["hp"] <= 0:
+                        spirit["alive"] = False
+                        inventory["Gold"] += 5
+                        set_message("+5 Gold (Spirit)", (180, 220, 255), 1.2)
+                    break
+
+        if room_key == (2, 2, 2):
+            for guardian in cave_guardians:
+                if not guardian.get("alive", True):
+                    continue
+                guardian_rect = pygame.Rect(guardian["x"] - 18, guardian["y"] - 18, 36, 36)
+                if guardian_rect.collidepoint(bullet["x"], bullet["y"]):
+                    guardian["hp"] -= bullet.get("damage", 0)
+                    bullets_to_remove.append(i)
+                    if guardian["hp"] <= 0:
+                        guardian["alive"] = False
+                        set_message("Guardian shattered!", (200, 180, 180), 1.2)
+                    break
+
+        if room_key == (2, 0, 1) and echoes_miniboss and not echoes_boss_defeated:
+            if echoes_miniboss["rect"].collidepoint(bullet["x"], bullet["y"]):
+                echoes_miniboss["hp"] -= bullet.get("damage", 0)
+                bullets_to_remove.append(i)
+
+        if room_key == (2, 1, 2) and kael_boss and not kael_defeated:
+            if kael_boss["rect"].collidepoint(bullet["x"], bullet["y"]):
+                bonus = 5 if cave_relic_collected else 0
+                kael_boss["hp"] -= bullet.get("damage", 0) + bonus
+                bullets_to_remove.append(i)
+                if kael_boss["hp"] <= 0:
+                    kael_boss["hp"] = 0
+                    kael_defeated = True
+                    def _to_sanctuary():
+                        global previous_room_coords
+                        current_room_coords[:] = [2, 0, 2]
+                        player_rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 100)
+                        handle_room_entry((2, 0, 2), (2, 1, 2))
+                        previous_room_coords = (2, 0, 2)
+                    start_cutscene([
+                        "Kael falters, the relics pulsing with restored light.",
+                        "The final strike shatters the temporal distortion.",
+                        "A calm silence follows as the altar fades."
+                    ], line_duration=3.0, on_complete=_to_sanctuary)
+
         
         for d in drones:
             if tuple(d.get("room_key")) != room_key:
@@ -2946,6 +3113,34 @@ def handle_cyber_purchase(item_id):
         set_message(f"Used {item['name']}! +50 Health", (0, 255, 255), 2.0)
     
     return True
+
+def set_checkpoint(room_key, pos=None, health_value=None):
+    """Store a lightweight checkpoint for Level 3 scenes."""
+    global checkpoint_data
+    if pos is None:
+        pos = (player_rect.centerx, player_rect.centery)
+    if health_value is None:
+        health_value = health
+    checkpoint_data = {
+        "room": tuple(room_key),
+        "pos": (int(pos[0]), int(pos[1])),
+        "health": int(health_value),
+    }
+
+def respawn_to_checkpoint():
+    """Respawn the player at the last saved checkpoint."""
+    global health, player_rect, current_room_coords, reloading_active, reload_timer
+    if not checkpoint_data:
+        return False
+    room = checkpoint_data["room"]
+    current_room_coords[:] = [room[0], room[1], room[2]]
+    player_rect.center = checkpoint_data["pos"]
+    health = max(1, checkpoint_data["health"])
+    reloading_active = False
+    reload_timer = 0.0
+    set_message("Checkpoint restored.", (200, 220, 255), 2.0)
+    return True
+
 def respawn_player():
     """Handle player respawn with penalties."""
     global health, max_health, weapon_level, armor_level, player_rect, current_room_coords, current_ammo, reloading_active, reload_timer
@@ -3008,6 +3203,43 @@ def draw_object(x, y, obj_type, surface, level, width=None, height=None):
             label = label_font.render("DAMAGE", True, (255, 255, 255))
             surface.blit(label, (x + 5, y + 5))
         
+        return rect
+    if obj_type == "temple_gate":
+        rect = pygame.Rect(x, y, width, height)
+        gate_color = (120, 90, 40)
+        pygame.draw.rect(surface, gate_color, rect)
+        pygame.draw.rect(surface, (200, 170, 90), rect, 3)
+        if not temple_gate_unlocked:
+            colliders.append(rect)
+            if DEBUG_MODE:
+                label_font = pygame.font.SysFont(None, 20)
+                label = label_font.render("SEALED", True, (255, 255, 255))
+                surface.blit(label, (x + 4, y + 4))
+        else:
+            pygame.draw.line(surface, (200, 200, 140), rect.topleft, rect.bottomleft, 4)
+        return rect
+    if obj_type == "temple_puzzle":
+        rect = pygame.Rect(x, y, width, height)
+        pygame.draw.rect(surface, (60, 50, 30), rect)
+        pygame.draw.rect(surface, (220, 190, 120), rect, 3)
+        pygame.draw.circle(surface, (220, 200, 100), rect.center, max(8, rect.width // 6))
+        interactive_objects.append({"rect": rect, "type": obj_type, "x": x, "y": y})
+        colliders.append(rect)
+        return rect
+    if obj_type == "crafting_table":
+        rect = pygame.Rect(x, y, width, height)
+        pygame.draw.rect(surface, (40, 60, 40), rect)
+        pygame.draw.rect(surface, (120, 200, 140), rect, 3)
+        pygame.draw.line(surface, (220, 220, 180), rect.topleft, rect.bottomright, 2)
+        pygame.draw.line(surface, (220, 220, 180), rect.topright, rect.bottomleft, 2)
+        interactive_objects.append({"rect": rect, "type": obj_type, "x": x, "y": y})
+        colliders.append(rect)
+        return rect
+    if obj_type == "altar":
+        rect = pygame.Rect(x, y, width, height)
+        pygame.draw.rect(surface, (40, 40, 60), rect)
+        pygame.draw.rect(surface, (120, 120, 200), rect, 3)
+        pygame.draw.circle(surface, (140, 200, 255), rect.center, max(10, rect.width // 4), 2)
         return rect
     elif obj_type == "shop":
         img = load_object_image("shop", width, height)
@@ -3347,6 +3579,430 @@ def draw_room(surface, level, row, col):
     for item in room_info.get("items", []):
         draw_item(surface, item["x"], item["y"], item["type"], item.get("id", ""))
 
+    draw_level3_room_extras(surface, room_key)
+
+def get_time_slow_factor():
+    """Return the global time slow multiplier."""
+    return TIME_SLOW_FACTOR if time_slow_active else 1.0
+
+def init_time_spirits():
+    """Initialize jungle time spirits with patrol paths."""
+    global time_spirits
+    if time_spirits:
+        return
+    paths = [
+        [(120, 120), (660, 140), (600, 620), (140, 620)],
+        [(200, 200), (520, 240), (480, 520), (220, 560)],
+        [(300, 140), (680, 360), (360, 660), (100, 420)],
+    ]
+    for i, path in enumerate(paths):
+        time_spirits.append({
+            "x": float(path[0][0]),
+            "y": float(path[0][1]),
+            "path": path,
+            "idx": 1,
+            "speed": 110 + i * 10,
+            "hp": 30,
+            "alive": True,
+            "contact_cd": 0.0,
+        })
+
+def update_time_spirits(dt):
+    """Update jungle time spirit patrols."""
+    global health, player_electrified_timer
+    room_key = tuple(current_room_coords)
+    if room_key != (2, 2, 0):
+        return
+    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or crafting_visible or temple_puzzle_visible:
+        return
+    init_time_spirits()
+    dt_sec = dt / 1000.0
+    speed_factor = get_time_slow_factor()
+    for spirit in time_spirits:
+        if not spirit.get("alive", True):
+            continue
+        spirit["contact_cd"] = max(0.0, spirit.get("contact_cd", 0.0) - dt_sec)
+        target = spirit["path"][spirit["idx"]]
+        dx = target[0] - spirit["x"]
+        dy = target[1] - spirit["y"]
+        dist = math.hypot(dx, dy)
+        if dist <= 4:
+            spirit["idx"] = (spirit["idx"] + 1) % len(spirit["path"])
+        else:
+            step = spirit["speed"] * speed_factor * dt_sec
+            spirit["x"] += (dx / dist) * step
+            spirit["y"] += (dy / dist) * step
+
+        spirit_rect = pygame.Rect(spirit["x"] - 14, spirit["y"] - 14, 28, 28)
+        if spirit_rect.colliderect(player_rect) and spirit["contact_cd"] <= 0.0:
+            damage = 6
+            health = max(0, health - damage)
+            player_electrified_timer = 2.0
+            spirit["contact_cd"] = 0.9
+            set_message(f"-{damage} HP (Time Spirit)", (180, 120, 255), 1.2)
+
+def draw_time_spirits(surface):
+    """Draw jungle time spirits."""
+    room_key = tuple(current_room_coords)
+    if room_key != (2, 2, 0):
+        return
+    for spirit in time_spirits:
+        if not spirit.get("alive", True):
+            continue
+        x, y = int(spirit["x"]), int(spirit["y"])
+        pygame.draw.circle(surface, (140, 160, 255), (x, y), 18)
+        pygame.draw.circle(surface, (60, 80, 140), (x, y), 10)
+        pygame.draw.circle(surface, (200, 220, 255), (x, y), 22, 2)
+
+def init_cave_guardians():
+    """Spawn cave guardians in the Waterfall Cave."""
+    global cave_guardians
+    if cave_guardians or cave_relic_collected:
+        return
+    cave_guardians = [
+        {"x": 220.0, "y": 260.0, "hp": 45, "alive": True, "contact_cd": 0.0},
+        {"x": 520.0, "y": 300.0, "hp": 45, "alive": True, "contact_cd": 0.0},
+        {"x": 420.0, "y": 500.0, "hp": 55, "alive": True, "contact_cd": 0.0},
+    ]
+
+def update_cave_guardians(dt):
+    """Update cave guardian movement."""
+    global health
+    room_key = tuple(current_room_coords)
+    if room_key != (2, 2, 2):
+        return
+    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or crafting_visible or temple_puzzle_visible:
+        return
+    init_cave_guardians()
+    dt_sec = dt / 1000.0
+    speed_factor = get_time_slow_factor()
+    for guardian in cave_guardians:
+        if not guardian.get("alive", True):
+            continue
+        guardian["contact_cd"] = max(0.0, guardian.get("contact_cd", 0.0) - dt_sec)
+        dx = player_rect.centerx - guardian["x"]
+        dy = player_rect.centery - guardian["y"]
+        dist = math.hypot(dx, dy)
+        if dist > 12 and dist < 300:
+            step = 90 * speed_factor * dt_sec
+            guardian["x"] += (dx / dist) * step
+            guardian["y"] += (dy / dist) * step
+
+        guardian_rect = pygame.Rect(guardian["x"] - 18, guardian["y"] - 18, 36, 36)
+        if guardian_rect.colliderect(player_rect) and guardian["contact_cd"] <= 0.0:
+            damage = 8
+            health = max(0, health - damage)
+            guardian["contact_cd"] = 1.0
+            set_message(f"-{damage} HP (Cave Guardian)", (255, 120, 120), 1.2)
+
+def draw_cave_guardians(surface):
+    """Draw cave guardians."""
+    room_key = tuple(current_room_coords)
+    if room_key != (2, 2, 2):
+        return
+    for guardian in cave_guardians:
+        if not guardian.get("alive", True):
+            continue
+        x, y = int(guardian["x"]), int(guardian["y"])
+        pygame.draw.circle(surface, (200, 80, 80), (x, y), 20)
+        pygame.draw.circle(surface, (120, 40, 40), (x, y), 12)
+        pygame.draw.circle(surface, (240, 200, 200), (x, y), 22, 2)
+
+def update_jungle_scene(dt):
+    """Update jungle traps and exit trigger."""
+    global jungle_trap_timer, jungle_traps_active, jungle_cleared
+    room_key = tuple(current_room_coords)
+    if room_key != (2, 2, 0):
+        return
+    dt_sec = dt / 1000.0
+    trap_dt = dt_sec * get_time_slow_factor()
+    jungle_trap_timer += trap_dt
+    if jungle_trap_timer >= jungle_trap_cycle:
+        jungle_trap_timer = 0.0
+        jungle_traps_active = not jungle_traps_active
+
+    exit_rect = pygame.Rect(SCREEN_WIDTH - 120, 40, 90, 90)
+    if player_rect.colliderect(exit_rect) and not jungle_cleared:
+        jungle_cleared = True
+        set_message("You made it through the jungle path!", (180, 255, 180), 2.5)
+
+def update_cave_scene():
+    """Reveal the cave entrance and relic availability."""
+    global cave_entrance_revealed, cave_relic_available
+    room_key = tuple(current_room_coords)
+    if room_key != (2, 2, 2):
+        return
+    if not cave_entrance_revealed and player_rect.colliderect(cave_reveal_rect):
+        cave_entrance_revealed = True
+        set_message("Hidden cave entrance revealed!", (180, 220, 255), 2.0)
+    if not cave_relic_available and not cave_relic_collected:
+        living = any(g.get("alive", True) for g in cave_guardians)
+        if not living and cave_guardians:
+            cave_relic_available = True
+            set_message("The relic is now safe to claim.", (200, 220, 255), 2.0)
+
+def update_lava_scene(dt):
+    """Update lava platforms and contact damage."""
+    global lava_platform_timer
+    room_key = tuple(current_room_coords)
+    if room_key != (2, 1, 0):
+        return
+    dt_sec = dt / 1000.0
+    lava_platform_timer += dt_sec * get_time_slow_factor()
+    if player_rect.colliderect(lava_zone_rect):
+        if not respawn_to_checkpoint():
+            respawn_player()
+
+def spawn_echoes_miniboss():
+    """Spawn the Hall of Echoes miniboss."""
+    global echoes_miniboss, echoes_arena_locked
+    echoes_miniboss = {
+        "rect": pygame.Rect(340, 260, 120, 140),
+        "hp": 220,
+        "max_hp": 220,
+        "speed": 120,
+        "attack_cd": 2.0,
+    }
+    echoes_arena_locked = True
+    set_message("The Hall of Echoes seals itself...", (200, 160, 255), 2.5)
+
+def update_echoes_miniboss(dt):
+    """Update the Hall of Echoes miniboss."""
+    global echoes_miniboss, echoes_boss_defeated, echoes_arena_locked
+    global player_electrified_timer, health
+    if not echoes_miniboss or echoes_boss_defeated:
+        return
+    room_key = tuple(current_room_coords)
+    if room_key != (2, 0, 1):
+        return
+    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or crafting_visible or temple_puzzle_visible:
+        return
+    dt_sec = dt / 1000.0
+    speed_factor = get_time_slow_factor()
+    dx = player_rect.centerx - echoes_miniboss["rect"].centerx
+    dy = player_rect.centery - echoes_miniboss["rect"].centery
+    dist = math.hypot(dx, dy)
+    if dist > 4:
+        step = echoes_miniboss["speed"] * speed_factor * dt_sec
+        echoes_miniboss["rect"].x += int((dx / dist) * step)
+        echoes_miniboss["rect"].y += int((dy / dist) * step)
+
+    echoes_miniboss["attack_cd"] -= dt_sec * speed_factor
+    if echoes_miniboss["attack_cd"] <= 0:
+        echoes_miniboss["attack_cd"] = 2.5
+        player_electrified_timer = 2.5
+        health = max(0, health - 6)
+        set_message("Time distortion hits you!", (200, 140, 255), 1.6)
+
+    if echoes_miniboss["hp"] <= 0:
+        echoes_boss_defeated = True
+        echoes_arena_locked = False
+        set_message("Echo Warden defeated!", (255, 220, 150), 2.5)
+
+def draw_echoes_miniboss(surface):
+    """Draw the Hall of Echoes miniboss."""
+    if not echoes_miniboss or echoes_boss_defeated:
+        return
+    room_key = tuple(current_room_coords)
+    if room_key != (2, 0, 1):
+        return
+    rect = echoes_miniboss["rect"]
+    pygame.draw.rect(surface, (120, 60, 150), rect)
+    pygame.draw.rect(surface, (200, 140, 240), rect, 3)
+    bar_w = rect.width
+    bar_x = rect.x
+    bar_y = rect.y - 10
+    pygame.draw.rect(surface, (80, 0, 0), (bar_x, bar_y, bar_w, 6))
+    hp_ratio = max(0, echoes_miniboss["hp"]) / max(1, echoes_miniboss["max_hp"])
+    pygame.draw.rect(surface, (255, 80, 120), (bar_x, bar_y, int(bar_w * hp_ratio), 6))
+
+def spawn_kael_boss():
+    """Spawn Kael in the Temporal Altar."""
+    global kael_boss, kael_phase
+    kael_phase = 1
+    kael_boss = {
+        "rect": pygame.Rect(340, 220, 120, 150),
+        "hp": 360,
+        "max_hp": 360,
+        "speed": 110,
+        "shot_cd": 1.8,
+    }
+    set_message("Kael emerges from the temporal rift!", (200, 180, 255), 2.5)
+
+def update_kael_boss(dt):
+    """Update Kael boss behavior and projectiles."""
+    global kael_boss, kael_defeated, kael_phase
+    room_key = tuple(current_room_coords)
+    if room_key != (2, 1, 2) or not kael_boss or kael_defeated:
+        return
+    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or crafting_visible or temple_puzzle_visible:
+        return
+    dt_sec = dt / 1000.0
+    speed_factor = get_time_slow_factor()
+
+    hp_ratio = kael_boss["hp"] / max(1, kael_boss["max_hp"])
+    if hp_ratio <= 0.66 and kael_phase == 1:
+        kael_phase = 2
+        set_message("Kael shifts into Phase 2!", (255, 140, 200), 2.0)
+    if hp_ratio <= 0.33 and kael_phase == 2:
+        kael_phase = 3
+        set_message("Kael enters Phase 3!", (255, 100, 160), 2.0)
+
+    base_speed = 110 + (kael_phase - 1) * 30
+    kael_boss["speed"] = base_speed
+    dx = player_rect.centerx - kael_boss["rect"].centerx
+    dy = player_rect.centery - kael_boss["rect"].centery
+    dist = math.hypot(dx, dy)
+    if dist > 6:
+        step = kael_boss["speed"] * speed_factor * dt_sec
+        kael_boss["rect"].x += int((dx / dist) * step)
+        kael_boss["rect"].y += int((dy / dist) * step)
+
+    kael_boss["shot_cd"] -= dt_sec * speed_factor
+    if kael_boss["shot_cd"] <= 0:
+        kael_boss["shot_cd"] = max(0.8, 1.8 - kael_phase * 0.3)
+        shots = 1 + (kael_phase - 1)
+        for _ in range(shots):
+            ddx = player_rect.centerx - kael_boss["rect"].centerx
+            ddy = player_rect.centery - kael_boss["rect"].centery
+            d = math.hypot(ddx, ddy) or 1.0
+            speed = 280 + kael_phase * 40
+            active_bullets.append({
+                "x": float(kael_boss["rect"].centerx),
+                "y": float(kael_boss["rect"].centery),
+                "dx": (ddx / d) * speed,
+                "dy": (ddy / d) * speed,
+                "radius": 6 + kael_phase,
+                "damage": 10 + kael_phase * 2,
+                "hostile": True,
+            })
+
+def draw_kael_boss(surface):
+    """Draw Kael and his aura."""
+    if not kael_boss or kael_defeated:
+        return
+    room_key = tuple(current_room_coords)
+    if room_key != (2, 1, 2):
+        return
+    rect = kael_boss["rect"]
+    pygame.draw.rect(surface, (60, 40, 90), rect)
+    pygame.draw.rect(surface, (160, 120, 220), rect, 3)
+    pygame.draw.circle(surface, (120, 180, 255), rect.center, rect.width // 2, 2)
+
+    bar_w = rect.width + 40
+    bar_x = rect.centerx - bar_w // 2
+    bar_y = rect.y - 14
+    pygame.draw.rect(surface, (80, 0, 0), (bar_x, bar_y, bar_w, 7))
+    hp_ratio = max(0, kael_boss["hp"]) / max(1, kael_boss["max_hp"])
+    pygame.draw.rect(surface, (255, 80, 120), (bar_x, bar_y, int(bar_w * hp_ratio), 7))
+
+def draw_level3_room_extras(surface, room_key):
+    """Draw and register dynamic Level 3 elements."""
+    global interactive_objects, colliders, hazard_zones, echoes_rewards_dropped
+    if room_key == (2, 2, 0):
+        if jungle_traps_active and not jungle_cleared:
+            for rect in jungle_trap_rects:
+                hazard_zones.append(rect)
+                pygame.draw.rect(surface, (200, 80, 40), rect)
+            if player_rect.colliderect(jungle_proximity_trap.inflate(30, 30)):
+                hazard_zones.append(jungle_proximity_trap)
+                pygame.draw.rect(surface, (200, 100, 60), jungle_proximity_trap)
+        draw_time_spirits(surface)
+
+    if room_key == (2, 2, 2):
+        if not cave_entrance_revealed:
+            pygame.draw.rect(surface, (40, 80, 40), cave_blocker_rect)
+            colliders.append(cave_blocker_rect)
+        else:
+            entrance_rect = pygame.Rect(610, 40, 150, 80)
+            pygame.draw.rect(surface, (60, 100, 140), entrance_rect)
+            pygame.draw.rect(surface, (120, 200, 255), entrance_rect, 2)
+        pygame.draw.rect(surface, (80, 120, 120), cave_reveal_rect, 2)
+        draw_cave_guardians(surface)
+        if cave_relic_available and not cave_relic_collected:
+            relic_rect = pygame.Rect(360, 120, 70, 70)
+            pygame.draw.rect(surface, (100, 180, 255), relic_rect)
+            pygame.draw.rect(surface, (220, 240, 255), relic_rect, 3)
+            interactive_objects.append({"rect": relic_rect, "type": "relic", "x": relic_rect.x, "y": relic_rect.y})
+
+    if room_key == (2, 1, 0):
+        pygame.draw.rect(surface, (180, 60, 30), lava_zone_rect)
+        pygame.draw.rect(surface, (255, 140, 60), lava_zone_rect, 3)
+        for plat in lava_platforms:
+            base_x, base_y = plat["base"]
+            amp = plat["amp"]
+            phase = plat["phase"]
+            size_w, size_h = plat["size"]
+            if plat["axis"] == "x":
+                offset = math.sin(lava_platform_timer * plat["speed"] + phase) * amp
+                px = base_x + offset
+                py = base_y
+            else:
+                offset = math.cos(lava_platform_timer * plat["speed"] + phase) * amp
+                px = base_x
+                py = base_y + offset
+            rect = pygame.Rect(int(px), int(py), size_w, size_h)
+            pygame.draw.rect(surface, (120, 120, 140), rect)
+            pygame.draw.rect(surface, (200, 200, 220), rect, 2)
+            colliders.append(rect)
+
+    if room_key == (2, 0, 1):
+        if echoes_arena_locked and not echoes_boss_defeated:
+            walls = [
+                pygame.Rect(0, 0, SCREEN_WIDTH, 20),
+                pygame.Rect(0, SCREEN_HEIGHT - 20, SCREEN_WIDTH, 20),
+                pygame.Rect(0, 0, 20, SCREEN_HEIGHT),
+                pygame.Rect(SCREEN_WIDTH - 20, 0, 20, SCREEN_HEIGHT),
+            ]
+            for wall in walls:
+                pygame.draw.rect(surface, (120, 80, 160), wall)
+                colliders.append(wall)
+        draw_echoes_miniboss(surface)
+        if echoes_boss_defeated and not echoes_rewards_dropped:
+            echoes_rewards_dropped = True
+            room_info = room_data.get(room_key, {})
+            room_info.setdefault("items", []).extend([
+                {"type": "gold", "x": 360, "y": 420, "id": "echoes_gold"},
+                {"type": "potion", "x": 420, "y": 420, "id": "echoes_potion"},
+            ])
+
+    if room_key == (2, 1, 2):
+        draw_kael_boss(surface)
+
+def handle_room_entry(new_room, old_room):
+    """Trigger one-time events when entering Level 3 rooms."""
+    global kael_origin_revealed, echoes_miniboss, echoes_boss_defeated, kael_boss
+    if new_room == (2, 2, 1) and not kael_origin_revealed:
+        kael_origin_revealed = True
+        start_cutscene([
+            "Sage Olan: The city remembers Kael before he was a tyrant.",
+            "Sage Olan: He once guarded the timeline as a humble keeper.",
+            "Sage Olan: The shards corrupted him, turning duty into obsession.",
+            "Sage Olan: You must reach his altar and break the cycle."
+        ], line_duration=3.0)
+        set_message("Kael's origin revealed.", (200, 220, 255), 2.0)
+
+    if new_room == (2, 0, 1) and not echoes_boss_defeated and echoes_miniboss is None:
+        spawn_echoes_miniboss()
+
+    if new_room == (2, 1, 2) and not kael_defeated and kael_boss is None:
+        spawn_kael_boss()
+
+    if new_room == (2, 2, 2):
+        init_cave_guardians()
+
+    if new_room == (2, 0, 2) and not timeline_restored:
+        def _finish_ending():
+            global timeline_restored, level3_complete
+            timeline_restored = True
+            level3_complete = True
+            set_message("Timeline restored.", (180, 255, 200), 3.0)
+        start_cutscene([
+            "The relics merge, restoring the fractured timeline.",
+            "The sanctuary hums as the last echoes fade.",
+            "Arin breathes as time steadies once more."
+        ], line_duration=3.0, on_complete=_finish_ending)
+
 def draw_health_bar(surface):
                                                                                  
     """Draw permanent health bar at bottom middle of screen."""
@@ -3480,6 +4136,180 @@ def draw_dialogue(surface):
     
     hint = small_font.render("Press SPACE to continue...", True, (200, 200, 200))
     surface.blit(hint, (box.right - 180, box.bottom - 30))
+
+def start_cutscene(lines, line_duration=2.5, on_complete=None):
+    """Start an unskippable cutscene sequence."""
+    global cutscene_active, cutscene_lines, cutscene_index, cutscene_timer
+    global cutscene_line_duration, cutscene_on_complete
+    cutscene_active = True
+    cutscene_lines = list(lines)
+    cutscene_index = 0
+    cutscene_timer = 0.0
+    cutscene_line_duration = line_duration
+    cutscene_on_complete = on_complete
+
+def update_cutscene(dt):
+    """Advance cutscene lines automatically."""
+    global cutscene_active, cutscene_index, cutscene_timer
+    if not cutscene_active:
+        return
+    cutscene_timer += dt / 1000.0
+    if cutscene_timer >= cutscene_line_duration:
+        cutscene_timer = 0.0
+        cutscene_index += 1
+        if cutscene_index >= len(cutscene_lines):
+            cutscene_active = False
+            if cutscene_on_complete:
+                try:
+                    cutscene_on_complete()
+                except Exception:
+                    pass
+
+def draw_cutscene(surface):
+    """Draw an unskippable cutscene overlay."""
+    if not cutscene_active or not cutscene_lines:
+        return
+    box = pygame.Rect(50, SCREEN_HEIGHT - 200, SCREEN_WIDTH - 100, 150)
+    pygame.draw.rect(surface, (10, 10, 25), box)
+    pygame.draw.rect(surface, (120, 180, 220), box, 3)
+
+    text = cutscene_lines[cutscene_index]
+    lines = []
+    words = text.split(" ")
+    line = ""
+    for word in words:
+        test = line + word + " "
+        if font.size(test)[0] < SCREEN_WIDTH - 150:
+            line = test
+        else:
+            lines.append(line)
+            line = word + " "
+    lines.append(line)
+
+    y = box.y + 20
+    for line in lines:
+        rendered = font.render(line, True, (240, 240, 255))
+        surface.blit(rendered, (box.x + 20, y))
+        y += 30
+
+    hint = small_font.render("...", True, (160, 180, 200))
+    surface.blit(hint, (box.right - 60, box.bottom - 30))
+
+def draw_temple_puzzle_overlay(surface):
+    """Draw the temple symbol puzzle overlay."""
+    global temple_puzzle_tile_rects
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 200))
+    surface.blit(overlay, (0, 0))
+
+    box = pygame.Rect(120, 150, SCREEN_WIDTH - 240, SCREEN_HEIGHT - 300)
+    pygame.draw.rect(surface, (30, 25, 15), box)
+    pygame.draw.rect(surface, (200, 170, 90), box, 4)
+
+    title = font.render("Temple Symbol Puzzle", True, (255, 220, 150))
+    surface.blit(title, (box.centerx - title.get_width() // 2, box.y + 20))
+
+    temple_puzzle_tile_rects = []
+    tile_start_x = box.x + 70
+    for i in range(3):
+        rect = pygame.Rect(tile_start_x + i * 150, box.y + 80, 110, 110)
+        temple_puzzle_tile_rects.append(rect)
+        pygame.draw.rect(surface, (60, 50, 30), rect)
+        pygame.draw.rect(surface, (230, 200, 120), rect, 3)
+
+        center = rect.center
+        orientation = temple_puzzle_tiles[i] % 4
+        if orientation == 0:
+            end = (center[0], rect.y + 15)
+        elif orientation == 1:
+            end = (rect.right - 15, center[1])
+        elif orientation == 2:
+            end = (center[0], rect.bottom - 15)
+        else:
+            end = (rect.x + 15, center[1])
+        pygame.draw.line(surface, (255, 230, 120), center, end, 6)
+        pygame.draw.circle(surface, (255, 200, 80), center, 6)
+
+    instructions = [
+        "Click tiles to rotate the symbols.",
+        "Press ENTER to test the alignment.",
+        "Press ESC to step back."
+    ]
+    y = box.bottom - 90
+    for line in instructions:
+        text = small_font.render(line, True, (220, 210, 180))
+        surface.blit(text, (box.x + 40, y))
+        y += 24
+
+def draw_crafting_menu(surface):
+    """Draw the crafting interface in the Ruins Plaza."""
+    if not crafting_visible:
+        return
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 210))
+    surface.blit(overlay, (0, 0))
+
+    box = pygame.Rect(140, 140, SCREEN_WIDTH - 280, SCREEN_HEIGHT - 280)
+    pygame.draw.rect(surface, (25, 35, 25), box)
+    pygame.draw.rect(surface, (120, 200, 140), box, 4)
+
+    title = font.render("Ruins Crafting Table", True, (200, 255, 210))
+    surface.blit(title, (box.centerx - title.get_width() // 2, box.y + 20))
+
+    recipe = small_font.render("Recipe: 2 Herbs + 1 Gold = 1 Health Potion", True, (230, 230, 230))
+    surface.blit(recipe, (box.x + 40, box.y + 80))
+
+    stock = small_font.render(
+        f"Herbs: {inventory['Herbs']}   Gold: {inventory['Gold']}   Potions: {inventory['Health Potions']}",
+        True,
+        (200, 220, 200),
+    )
+    surface.blit(stock, (box.x + 40, box.y + 110))
+
+    uses = small_font.render(f"Crafting uses left: {crafting_uses_left}", True, (255, 220, 140))
+    surface.blit(uses, (box.x + 40, box.y + 140))
+
+    controls = [
+        "Press C to craft a potion.",
+        "Press ENTER to confirm you are ready to continue.",
+        "Press ESC to close the menu."
+    ]
+    y = box.y + 200
+    for line in controls:
+        text = small_font.render(line, True, (220, 220, 220))
+        surface.blit(text, (box.x + 40, y))
+        y += 26
+
+def reset_temple_puzzle(randomize=True):
+    """Reset the temple puzzle tiles."""
+    global temple_puzzle_tiles
+    if randomize:
+        temple_puzzle_tiles = [random.randint(0, 3) for _ in range(3)]
+    else:
+        temple_puzzle_tiles = [0, 0, 0]
+
+def check_temple_puzzle():
+    """Check the temple puzzle solution."""
+    global temple_puzzle_attempts, temple_puzzle_solved, temple_gate_unlocked, temple_puzzle_visible, health
+    temple_puzzle_attempts += 1
+    if temple_puzzle_tiles == temple_puzzle_solution:
+        temple_puzzle_solved = True
+        temple_gate_unlocked = True
+        temple_puzzle_visible = False
+        set_message("The gate unlocks!", (180, 255, 180), 2.5)
+    else:
+        reset_temple_puzzle(randomize=True)
+        health = max(0, health - 5)
+        set_message("Incorrect symbols! The temple resets.", (255, 120, 120), 2.0)
+
+def handle_temple_puzzle_click(pos):
+    """Rotate puzzle tiles when clicked."""
+    if not temple_puzzle_visible:
+        return
+    for i, rect in enumerate(temple_puzzle_tile_rects):
+        if rect.collidepoint(pos):
+            temple_puzzle_tiles[i] = (temple_puzzle_tiles[i] + 1) % 4
+            return
 
 def draw_blacksmith_shop(surface):
     """Draw the improved blacksmith shop interface."""
@@ -3988,6 +4818,7 @@ def draw_how_to_play():
         "• M - Toggle Minimap",
         "• Q - Toggle Quest Log",
         "• H - Use Health Potion",
+        "• T - Time Slow Ability (Level 3)",
         "",
         "GAMEPLAY:",
         "• Explore different rooms and eras",
@@ -4089,6 +4920,10 @@ def room_transition():
     
     if player_rect.right > SCREEN_WIDTH:
         if col < MAP_COLS - 1:
+            if (level, row, col) == (2, 0, 0) and not temple_gate_unlocked:
+                player_rect.right = SCREEN_WIDTH
+                set_message("The temple gate is sealed.", (255, 200, 100), 1.5)
+                return
             current_room_coords[2] += 1
             player_rect.left = 0
         else:
@@ -4125,7 +4960,7 @@ def update_goblins(dt):
     state = goblin_rooms.get(room_key)
     if not state:
         return
-    if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active:
+    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or temple_puzzle_visible or crafting_visible:
         return
     global goblin_contact_cooldown, health
 
@@ -4249,7 +5084,7 @@ def update_timebandits(dt):
     state = timebandit_rooms.get(room_key)
     if not state:
         return
-    if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active:
+    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or temple_puzzle_visible or crafting_visible:
         return
     global goblin_contact_cooldown, health, player_electrified_timer
 
@@ -4532,6 +5367,10 @@ def handle_interaction():
     """Handle F key interactions."""
     global dialogue_active, current_dialogue, dialogue_index, upgrade_shop_visible
     global safe_visible, safe_input, safe_unlocked, maze_visible, cyber_shop_visible, time_guide_offer_level3
+    global temple_puzzle_visible, crafting_visible, cave_relic_collected, cave_relic_available
+
+    if cutscene_active or temple_puzzle_visible or crafting_visible:
+        return
     
     room_key = tuple(current_room_coords)
     
@@ -4710,6 +5549,29 @@ def handle_interaction():
             elif obj_type == "race_terminal" and room_key == (1, 1, 0):
                 start_race_minigame()
                 return
+            elif obj_type == "temple_puzzle" and room_key == (2, 0, 0):
+                if not temple_puzzle_solved:
+                    temple_puzzle_visible = True
+                    if temple_puzzle_attempts == 0 and temple_puzzle_tiles == [0, 0, 0]:
+                        reset_temple_puzzle(randomize=True)
+                else:
+                    set_message("The gate is already open.", (200, 200, 200), 1.5)
+                return
+            elif obj_type == "crafting_table" and room_key == (2, 1, 1):
+                if crafting_ready_confirmed:
+                    set_message("You've already confirmed your readiness.", (200, 200, 200), 1.5)
+                else:
+                    crafting_visible = True
+                return
+            elif obj_type == "relic" and room_key == (2, 2, 2):
+                if cave_relic_available and not cave_relic_collected:
+                    cave_relic_collected = True
+                    cave_relic_available = False
+                    inventory["Time Shards"] = inventory.get("Time Shards", 0) + 1
+                    inventory["Gold"] += 50
+                    set_checkpoint(room_key)
+                    set_message("Relic secured! Checkpoint saved.", (180, 255, 220), 3.0)
+                return
    
     if room_key == (1, 0, 1):  
         for inter_obj in interactive_objects:
@@ -4813,6 +5675,7 @@ while running:
                 play_button, how_to_button, about_button = draw_main_menu()
                 if play_button.collidepoint(mouse_pos):
                     game_state = "playing"
+                    enter_level_3()
                 elif how_to_button.collidepoint(mouse_pos):
                     game_state = "how_to_play"
                 elif about_button.collidepoint(mouse_pos):
@@ -4870,6 +5733,8 @@ while running:
                 close_rect = pygame.Rect(box.centerx - 50, box.bottom - 50, 100, 36)
                 if close_rect.collidepoint(mouse_pos):
                     cipher_visible = False
+            elif game_state == "playing" and temple_puzzle_visible:
+                handle_temple_puzzle_click(mouse_pos)
         
         elif event.type == pygame.KEYDOWN:
             if game_state == "playing":
@@ -4879,6 +5744,33 @@ while running:
                         set_message("Race exited.", (200, 200, 200), 1.2)
                     elif event.key == pygame.K_r:
                         _reset_race_car()
+                    continue
+                if cutscene_active:
+                    continue
+                if temple_puzzle_visible:
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        check_temple_puzzle()
+                    elif event.key == pygame.K_ESCAPE:
+                        temple_puzzle_visible = False
+                    continue
+                if crafting_visible:
+                    if event.key == pygame.K_c:
+                        if crafting_uses_left <= 0:
+                            set_message("No crafting uses left.", (255, 200, 100), 1.5)
+                        elif inventory["Herbs"] >= 2 and inventory["Gold"] >= 1:
+                            inventory["Herbs"] -= 2
+                            inventory["Gold"] -= 1
+                            inventory["Health Potions"] += 1
+                            crafting_uses_left -= 1
+                            set_message("Potion crafted!", (180, 255, 180), 1.5)
+                        else:
+                            set_message("Not enough resources.", (255, 200, 100), 1.5)
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        crafting_ready_confirmed = True
+                        crafting_visible = False
+                        set_message("You are ready to continue.", (180, 255, 180), 2.0)
+                    elif event.key == pygame.K_ESCAPE:
+                        crafting_visible = False
                     continue
                 if maze_visible:
                                                               
@@ -4938,13 +5830,21 @@ while running:
                     inventory["Health Potions"] -= 1
                     health = min(max_health, health + 30)
                     set_message("+30 Health", (0, 255, 0), 1.5)
+
+                elif event.key == pygame.K_t:
+                    if time_slow_cooldown <= 0 and not time_slow_active:
+                        time_slow_active = True
+                        time_slow_timer = TIME_SLOW_DURATION
+                        time_slow_cooldown = TIME_SLOW_COOLDOWN
+                        set_message("Time slows around you.", (160, 220, 255), 2.0)
+                    elif time_slow_active:
+                        set_message("Time slow already active.", (200, 200, 200), 1.2)
+                    else:
+                        set_message("Time ability recharging.", (200, 200, 200), 1.2)
                 
                 elif event.key == pygame.K_f:
                     handle_interaction()
                     
-                elif event.key == pygame.K_t:
-                    enter_level_3()
-                
                 elif event.key == pygame.K_g:
                     give_herbs_to_collector()
 
@@ -5025,6 +5925,12 @@ while running:
         if tuple(current_room_coords) == (1, 2, 2) and not boss2_initialized:
             init_boss2()
             boss2_initialized = True
+
+        update_cutscene(dt)
+        time_slow_timer = max(0.0, time_slow_timer - dt / 1000.0)
+        if time_slow_timer <= 0:
+            time_slow_active = False
+        time_slow_cooldown = max(0.0, time_slow_cooldown - dt / 1000.0)
         
 
         mv_x = (keys_pressed[pygame.K_d] or keys_pressed[pygame.K_RIGHT]) - (keys_pressed[pygame.K_a] or keys_pressed[pygame.K_LEFT])
@@ -5037,7 +5943,7 @@ while running:
             player_facing = "left"
         
         
-        if dialogue_active or hud_visible or quest_log_visible or upgrade_shop_visible or safe_visible or maze_visible or race_active:
+        if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or safe_visible or maze_visible or race_active or temple_puzzle_visible or crafting_visible:
             mv_x, mv_y = 0, 0
 
         if race_active:
@@ -5056,6 +5962,13 @@ while running:
         update_goblins(dt)
         update_timebandits(dt)
         update_npcs(dt)
+        update_jungle_scene(dt)
+        update_time_spirits(dt)
+        update_cave_guardians(dt)
+        update_cave_scene()
+        update_lava_scene(dt)
+        update_echoes_miniboss(dt)
+        update_kael_boss(dt)
         
                                        
         if tuple(current_room_coords) == (0, 2, 0) and boss and boss["alive"]:
@@ -5071,6 +5984,10 @@ while running:
                               
         collision_check(dx, dy)
         room_transition()
+        new_room = tuple(current_room_coords)
+        if new_room != previous_room_coords:
+            handle_room_entry(new_room, previous_room_coords)
+            previous_room_coords = new_room
         
                              
         handle_damage_zones(dt)
@@ -5131,6 +6048,7 @@ while running:
         draw_quest_log(screen)
         draw_message(screen)
         draw_dialogue(screen)
+        draw_cutscene(screen)
         draw_blacksmith_shop(screen)
         draw_cyber_shop(screen)
         draw_enhanced_weapon_hud(screen)  
@@ -5147,6 +6065,12 @@ while running:
         
         if maze_visible:
             close_rect = draw_maze_puzzle(screen)
+
+        if temple_puzzle_visible:
+            draw_temple_puzzle_overlay(screen)
+
+        if crafting_visible:
+            draw_crafting_menu(screen)
         
         if cipher_visible:
             try:
@@ -5178,7 +6102,7 @@ while running:
                 near_object = True
                 break
         
-        if near_object and not dialogue_active and not upgrade_shop_visible and not safe_visible and not maze_visible and not cipher_visible and not race_active:
+        if near_object and not dialogue_active and not cutscene_active and not upgrade_shop_visible and not safe_visible and not maze_visible and not cipher_visible and not race_active and not temple_puzzle_visible and not crafting_visible:
             hint = small_font.render("Press F to Interact", True, (255, 255, 255))
             screen.blit(hint, (player_rect.centerx - 40, player_rect.top - 25))
             
