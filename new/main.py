@@ -865,13 +865,6 @@ temple_puzzle_solved = False
 temple_gate_unlocked = False
 temple_puzzle_tile_rects = []
 
-time_slow_active = False
-time_slow_timer = 0.0
-time_slow_cooldown = 0.0
-TIME_SLOW_DURATION = 4.0
-TIME_SLOW_COOLDOWN = 8.0
-TIME_SLOW_FACTOR = 0.45
-
 jungle_trap_timer = 0.0
 jungle_traps_active = False
 jungle_cleared = False
@@ -2134,7 +2127,6 @@ def enter_level_3():
     global collected_gold, collected_herbs, collected_potions, collected_keys, collected_timeshards
     global boss_defeated, boss_drop_collected
     global temple_puzzle_visible, temple_puzzle_tiles, temple_puzzle_attempts, temple_puzzle_solved, temple_gate_unlocked
-    global time_slow_active, time_slow_timer, time_slow_cooldown
     global jungle_trap_timer, jungle_traps_active, jungle_cleared, time_spirits
     global cave_entrance_revealed, cave_guardians, cave_relic_available, cave_relic_collected
     global crafting_visible, crafting_uses_left, crafting_ready_confirmed
@@ -2179,9 +2171,6 @@ def enter_level_3():
         temple_puzzle_attempts = 0
         temple_puzzle_solved = False
         temple_gate_unlocked = False
-        time_slow_active = False
-        time_slow_timer = 0.0
-        time_slow_cooldown = 0.0
         jungle_trap_timer = 0.0
         jungle_traps_active = False
         jungle_cleared = False
@@ -2209,6 +2198,74 @@ def enter_level_3():
         tb = traceback.format_exc()
         print("Error entering level 3:\n", tb)
         set_message("Error entering level 3 (see console).", (255, 0, 0), 5.0)
+
+def start_level_1():
+    """Start a fresh run in Level 1."""
+    global current_room_coords, player_rect, health, max_health, weapon_level, armor_level
+    global player_has_weapon, using_laser_weapon, current_ammo, max_ammo_count
+    global inventory, quests, collected_gold, collected_herbs, collected_potions
+    global collected_keys, collected_timeshards, collected_credits
+    global safe_input, safe_unlocked, safe_visible, cipher_visible, cipher_input
+    global compiler_quest_active, compiler_quest_completed, compiler_input
+    global boss_defeated, boss_drop_collected, boss_initialized, boss2_initialized
+
+    current_room_coords[:] = [0, 0, 0]
+    player_rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+
+    max_health = 100
+    health = max_health
+    weapon_level = 1
+    armor_level = 0
+    player_has_weapon = False
+    using_laser_weapon = False
+    current_ammo = 0
+    max_ammo_count = 30
+
+    inventory = {
+        "Gold": 50,
+        "Health Potions": 3,
+        "Herbs": 0,
+        "Keys": 0,
+        "Time Shards": 0,
+        "Keycards": 0,
+        "Ammo Packs": 0
+    }
+
+    quests = {
+        "buy_weapon": {"active": False, "complete": False, "description": "Buy a basic firearm from the Blacksmith"},
+        "upgrade_sword": {"active": False, "complete": False, "description": "Upgrade your weapon at the Blacksmith"},
+        "buy_laser_weapon": {"active": False, "complete": False, "description": "Buy a Neon Blaster from the Neon Market"},
+        "upgrade_laser": {"active": False, "complete": False, "description": "Upgrade your laser weapon"},
+        "upgrade_energy_shield": {"active": False, "complete": False, "description": "Upgrade your energy shield in the Neon Market"},
+        "defeat_goblin_king": {"active": False, "complete": False, "description": "Defeat the Goblin King in the throne room"},
+        "find_shard_1": {"active": False, "complete": False, "description": "Find the first Time Shard"},
+        "rescue_knight": {"active": False, "complete": False, "description": "Rescue the knight trapped in the cage"},
+        "talk_to_elder": {"active": False, "complete": False, "description": "Speak with Elder Rowan in the village"},
+        "kill_time_bandits": {"active": False, "complete": False, "description": "Eliminate the Time Bandits in Neon Streets"},
+        "solve_drawbridge": {"active": False, "complete": False, "description": "Solve the drawbridge puzzle"},
+        "collect_herbs": {"active": False, "complete": False, "description": "Collect 3 herbs for the Herb Collector"}
+    }
+
+    collected_gold.clear()
+    collected_herbs.clear()
+    collected_potions.clear()
+    collected_keys.clear()
+    collected_timeshards.clear()
+    collected_credits.clear()
+
+    safe_input = ""
+    safe_unlocked = False
+    safe_visible = False
+    cipher_visible = False
+    cipher_input = ""
+    compiler_quest_active = False
+    compiler_quest_completed = False
+    compiler_input = ""
+
+    boss_defeated = False
+    boss_drop_collected = False
+    boss_initialized = False
+    boss2_initialized = False
 def update_thrown_axes(dt_sec):
     """Update positions of thrown axes and check for collisions."""
     global boss_thrown_axes, health
@@ -3209,12 +3266,10 @@ def draw_object(x, y, obj_type, surface, level, width=None, height=None):
         gate_color = (120, 90, 40)
         pygame.draw.rect(surface, gate_color, rect)
         pygame.draw.rect(surface, (200, 170, 90), rect, 3)
-        if not temple_gate_unlocked:
-            colliders.append(rect)
-            if DEBUG_MODE:
-                label_font = pygame.font.SysFont(None, 20)
-                label = label_font.render("SEALED", True, (255, 255, 255))
-                surface.blit(label, (x + 4, y + 4))
+        if not temple_gate_unlocked and DEBUG_MODE:
+            label_font = pygame.font.SysFont(None, 20)
+            label = label_font.render("SEALED", True, (255, 255, 255))
+            surface.blit(label, (x + 4, y + 4))
         else:
             pygame.draw.line(surface, (200, 200, 140), rect.topleft, rect.bottomleft, 4)
         return rect
@@ -3583,7 +3638,7 @@ def draw_room(surface, level, row, col):
 
 def get_time_slow_factor():
     """Return the global time slow multiplier."""
-    return TIME_SLOW_FACTOR if time_slow_active else 1.0
+    return 1.0
 
 def init_time_spirits():
     """Initialize jungle time spirits with patrol paths."""
@@ -3947,16 +4002,6 @@ def draw_level3_room_extras(surface, room_key):
             colliders.append(rect)
 
     if room_key == (2, 0, 1):
-        if echoes_arena_locked and not echoes_boss_defeated:
-            walls = [
-                pygame.Rect(0, 0, SCREEN_WIDTH, 20),
-                pygame.Rect(0, SCREEN_HEIGHT - 20, SCREEN_WIDTH, 20),
-                pygame.Rect(0, 0, 20, SCREEN_HEIGHT),
-                pygame.Rect(SCREEN_WIDTH - 20, 0, 20, SCREEN_HEIGHT),
-            ]
-            for wall in walls:
-                pygame.draw.rect(surface, (120, 80, 160), wall)
-                colliders.append(wall)
         draw_echoes_miniboss(surface)
         if echoes_boss_defeated and not echoes_rewards_dropped:
             echoes_rewards_dropped = True
@@ -4111,6 +4156,8 @@ def draw_dialogue(surface):
         return
     
     box = pygame.Rect(50, SCREEN_HEIGHT - 200, SCREEN_WIDTH - 100, 150)
+    if player_rect.colliderect(box):
+        box.y = max(20, box.y - 180)
     pygame.draw.rect(surface, (20, 20, 40), box)
     pygame.draw.rect(surface, (255, 215, 0), box, 3)
     
@@ -4134,8 +4181,8 @@ def draw_dialogue(surface):
         surface.blit(rendered, (box.x + 20, y))
         y += 30
     
-    hint = small_font.render("Press SPACE to continue...", True, (200, 200, 200))
-    surface.blit(hint, (box.right - 180, box.bottom - 30))
+    hint = small_font.render("Press SPACE or ENTER to continue...", True, (200, 200, 200))
+    surface.blit(hint, (box.right - hint.get_width() - 20, box.bottom - 30))
 
 def start_cutscene(lines, line_duration=2.5, on_complete=None):
     """Start an unskippable cutscene sequence."""
@@ -4155,21 +4202,28 @@ def update_cutscene(dt):
         return
     cutscene_timer += dt / 1000.0
     if cutscene_timer >= cutscene_line_duration:
-        cutscene_timer = 0.0
-        cutscene_index += 1
-        if cutscene_index >= len(cutscene_lines):
-            cutscene_active = False
-            if cutscene_on_complete:
-                try:
-                    cutscene_on_complete()
-                except Exception:
-                    pass
+        advance_cutscene_line()
+
+def advance_cutscene_line():
+    """Advance cutscene by one line (manual or auto)."""
+    global cutscene_active, cutscene_index, cutscene_timer
+    cutscene_timer = 0.0
+    cutscene_index += 1
+    if cutscene_index >= len(cutscene_lines):
+        cutscene_active = False
+        if cutscene_on_complete:
+            try:
+                cutscene_on_complete()
+            except Exception:
+                pass
 
 def draw_cutscene(surface):
     """Draw an unskippable cutscene overlay."""
     if not cutscene_active or not cutscene_lines:
         return
     box = pygame.Rect(50, SCREEN_HEIGHT - 200, SCREEN_WIDTH - 100, 150)
+    if player_rect.colliderect(box):
+        box.y = max(20, box.y - 180)
     pygame.draw.rect(surface, (10, 10, 25), box)
     pygame.draw.rect(surface, (120, 180, 220), box, 3)
 
@@ -4192,8 +4246,8 @@ def draw_cutscene(surface):
         surface.blit(rendered, (box.x + 20, y))
         y += 30
 
-    hint = small_font.render("...", True, (160, 180, 200))
-    surface.blit(hint, (box.right - 60, box.bottom - 30))
+    hint = small_font.render("Press SPACE to continue...", True, (160, 180, 200))
+    surface.blit(hint, (box.right - hint.get_width() - 20, box.bottom - 30))
 
 def draw_temple_puzzle_overlay(surface):
     """Draw the temple symbol puzzle overlay."""
@@ -4818,7 +4872,6 @@ def draw_how_to_play():
         "• M - Toggle Minimap",
         "• Q - Toggle Quest Log",
         "• H - Use Health Potion",
-        "• T - Time Slow Ability (Level 3)",
         "",
         "GAMEPLAY:",
         "• Explore different rooms and eras",
@@ -4920,10 +4973,6 @@ def room_transition():
     
     if player_rect.right > SCREEN_WIDTH:
         if col < MAP_COLS - 1:
-            if (level, row, col) == (2, 0, 0) and not temple_gate_unlocked:
-                player_rect.right = SCREEN_WIDTH
-                set_message("The temple gate is sealed.", (255, 200, 100), 1.5)
-                return
             current_room_coords[2] += 1
             player_rect.left = 0
         else:
@@ -5675,7 +5724,7 @@ while running:
                 play_button, how_to_button, about_button = draw_main_menu()
                 if play_button.collidepoint(mouse_pos):
                     game_state = "playing"
-                    enter_level_3()
+                    start_level_1()
                 elif how_to_button.collidepoint(mouse_pos):
                     game_state = "how_to_play"
                 elif about_button.collidepoint(mouse_pos):
@@ -5746,6 +5795,8 @@ while running:
                         _reset_race_car()
                     continue
                 if cutscene_active:
+                    if event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER):
+                        advance_cutscene_line()
                     continue
                 if temple_puzzle_visible:
                     if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
@@ -5802,7 +5853,7 @@ while running:
                         set_message("Compiler input error.", (255, 0, 0), 2.0)
                         print("handle_compiler_key error:", e)
                 
-                elif dialogue_active and event.key == pygame.K_SPACE:
+                elif dialogue_active and event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER):
                     dialogue_index += 1
                     if dialogue_index >= len(current_dialogue):
                         dialogue_active = False
@@ -5831,17 +5882,14 @@ while running:
                     health = min(max_health, health + 30)
                     set_message("+30 Health", (0, 255, 0), 1.5)
 
-                elif event.key == pygame.K_t:
-                    if time_slow_cooldown <= 0 and not time_slow_active:
-                        time_slow_active = True
-                        time_slow_timer = TIME_SLOW_DURATION
-                        time_slow_cooldown = TIME_SLOW_COOLDOWN
-                        set_message("Time slows around you.", (160, 220, 255), 2.0)
-                    elif time_slow_active:
-                        set_message("Time slow already active.", (200, 200, 200), 1.2)
-                    else:
-                        set_message("Time ability recharging.", (200, 200, 200), 1.2)
-                
+                elif event.key == pygame.K_t and DEBUG_MODE:
+                    set_message("DEV: Teleporting to Level 3...", (120, 255, 120), 2.0)
+                    try:
+                        enter_level_3()
+                    except Exception as e:
+                        set_message("Error entering Level 3.", (255, 0, 0), 2.0)
+                        print("enter_level_3 error:", e)
+
                 elif event.key == pygame.K_f:
                     handle_interaction()
                     
@@ -5927,10 +5975,6 @@ while running:
             boss2_initialized = True
 
         update_cutscene(dt)
-        time_slow_timer = max(0.0, time_slow_timer - dt / 1000.0)
-        if time_slow_timer <= 0:
-            time_slow_active = False
-        time_slow_cooldown = max(0.0, time_slow_cooldown - dt / 1000.0)
         
 
         mv_x = (keys_pressed[pygame.K_d] or keys_pressed[pygame.K_RIGHT]) - (keys_pressed[pygame.K_a] or keys_pressed[pygame.K_LEFT])
