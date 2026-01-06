@@ -3195,7 +3195,8 @@ def respawn_to_checkpoint():
     health = max(1, checkpoint_data["health"])
     reloading_active = False
     reload_timer = 0.0
-    set_message("Checkpoint restored.", (200, 220, 255), 2.0)
+    if room != (2, 0, 0):
+        set_message("Checkpoint restored.", (200, 220, 255), 2.0)
     return True
 
 def respawn_player():
@@ -3263,21 +3264,23 @@ def draw_object(x, y, obj_type, surface, level, width=None, height=None):
         return rect
     if obj_type == "temple_gate":
         rect = pygame.Rect(x, y, width, height)
-        gate_color = (120, 90, 40)
-        pygame.draw.rect(surface, gate_color, rect)
-        pygame.draw.rect(surface, (200, 170, 90), rect, 3)
-        if not temple_gate_unlocked and DEBUG_MODE:
+        if DEBUG_MODE:
+            debug_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+            debug_surface.fill((120, 90, 40, 80))
+            surface.blit(debug_surface, (x, y))
+            pygame.draw.rect(surface, (200, 170, 90), rect, 2)
             label_font = pygame.font.SysFont(None, 20)
-            label = label_font.render("SEALED", True, (255, 255, 255))
+            label = label_font.render("TEMPLE GATE", True, (255, 255, 255))
             surface.blit(label, (x + 4, y + 4))
-        else:
-            pygame.draw.line(surface, (200, 200, 140), rect.topleft, rect.bottomleft, 4)
         return rect
     if obj_type == "temple_puzzle":
         rect = pygame.Rect(x, y, width, height)
-        pygame.draw.rect(surface, (60, 50, 30), rect)
-        pygame.draw.rect(surface, (220, 190, 120), rect, 3)
-        pygame.draw.circle(surface, (220, 200, 100), rect.center, max(8, rect.width // 6))
+        if DEBUG_MODE:
+            debug_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+            debug_surface.fill((60, 50, 30, 80))
+            surface.blit(debug_surface, (x, y))
+            pygame.draw.rect(surface, (220, 190, 120), rect, 2)
+            pygame.draw.circle(surface, (220, 200, 100), rect.center, max(8, rect.width // 6), 2)
         interactive_objects.append({"rect": rect, "type": obj_type, "x": x, "y": y})
         colliders.append(rect)
         return rect
@@ -3804,9 +3807,6 @@ def update_lava_scene(dt):
         return
     dt_sec = dt / 1000.0
     lava_platform_timer += dt_sec * get_time_slow_factor()
-    if player_rect.colliderect(lava_zone_rect):
-        if not respawn_to_checkpoint():
-            respawn_player()
 
 def spawn_echoes_miniboss():
     """Spawn the Hall of Echoes miniboss."""
@@ -3981,8 +3981,6 @@ def draw_level3_room_extras(surface, room_key):
             interactive_objects.append({"rect": relic_rect, "type": "relic", "x": relic_rect.x, "y": relic_rect.y})
 
     if room_key == (2, 1, 0):
-        pygame.draw.rect(surface, (180, 60, 30), lava_zone_rect)
-        pygame.draw.rect(surface, (255, 140, 60), lava_zone_rect, 3)
         for plat in lava_platforms:
             base_x, base_y = plat["base"]
             amp = plat["amp"]
