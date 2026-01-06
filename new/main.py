@@ -4749,15 +4749,23 @@ def handle_maze_input():
            
             room_key = tuple(current_room_coords)
             room_info = room_data.get(room_key, {})
-            for npc in room_info.get("npcs", []):
+            for i, npc in enumerate(room_info.get("npcs", [])):
                 if npc.get("id") == "knight":
                     npc["rescued"] = True
                     npc["x"] = 500  
                     npc["y"] = 450
+                    key = f"{room_key[0]}_{room_key[1]}_{room_key[2]}_{npc.get('id')}_{i}"
+                    state = npc_states.get(key)
+                    if state:
+                        state["x"] = float(npc["x"])
+                        state["y"] = float(npc["y"])
+                        state["home_x"] = float(npc["x"])
+                        state["home_y"] = float(npc["y"])
                     quests["rescue_knight"]["complete"] = True
                     quests["defeat_goblin_king"]["active"] = True
-                                              
-                    room_info["items"].append({"type": "key", "x": 450, "y": 500, "id": "key_0_1_0_2"})
+                                             
+                    room_info.setdefault("items", []).append({"type": "key", "x": 450, "y": 500, "id": "key_0_1_0_2"})
+                    room_info["interactive"] = [obj for obj in room_info.get("interactive", []) if obj.get("type") != "cage"]
                     set_message("Knight rescued! He dropped a key!", (0, 255, 0), 3.0)
                     break
         return True
@@ -5553,15 +5561,15 @@ def handle_interaction():
             
             elif obj_type == "portal" and room_key == (0, 2, 2):
                 # Time Portal now requires specific items to open the gateway to Level 2.
-                required_keycards = 6
-                required_shards = 2
+                required_keycards = 3
+                required_shards = 0
                 have_keycards = inventory.get("Keycards", 0)
                 have_shards = inventory.get("Time Shards", 0)
 
                 missing = []
                 if have_keycards < required_keycards:
                     missing.append(f"{required_keycards - have_keycards} Keycard(s)")
-                if have_shards < required_shards:
+                if required_shards > 0 and have_shards < required_shards:
                     missing.append(f"{required_shards - have_shards} Time Shard(s)")
 
                 if not missing:
