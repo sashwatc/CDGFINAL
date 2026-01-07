@@ -50,7 +50,7 @@ LEVEL_2_BG_MAP = {
     (2,2): "ai_control_room",
     }
 pygame.display.set_caption("Chronicles of Time")
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.RESIZABLE | pygame.SCALED)
 clock = pygame.time.Clock()
 font = pygame.font.SysFont(None, 30)
 title_font = pygame.font.SysFont(None, 70)
