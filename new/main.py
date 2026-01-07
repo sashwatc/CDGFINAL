@@ -1632,8 +1632,7 @@ room_data = {
     (2, 0, 0): {"name": "Temple Entrance",        "objects": [
         {"type": "temple_gate", "x": 740, "y": 250, "width": 40, "height": 240}
     ], "interactive": [
-        {"type": "temple_puzzle", "x": 320, "y": 320, "width": 160, "height": 140},
-        {"type": "temple_shop", "x": 40, "y": 620, "width": 140, "height": 120}
+        {"type": "temple_puzzle", "x": 320, "y": 320, "width": 160, "height": 140}
     ], "npcs": [], "items": []},
     (2, 0, 1): {"name": "Hall of Echoes",        "objects": [], "interactive": [], "npcs": [], "items": []},
     (2, 0, 2): {"name": "Timeless Sanctuary",    "objects": [{"type": "invisible", "x": 740, "y": 30, "width": 125, "height": 325},
@@ -1644,7 +1643,9 @@ room_data = {
                                                             {"type":"invisible","x":500,"y":745,"width":325,"height":55},
                                                            {"type":"invisible","x":10,"y":745,"width":325,"height":55},
                                                             {"type":"invisible","x":0,"y":450,"width":55,"height":325},
-                                                             ], "interactive": [], "npcs": [], "items": []},
+                                                             ], "interactive": [
+        {"type": "temple_shop", "x": 330, "y": 340, "width": 140, "height": 120}
+    ], "npcs": [], "items": []},
 }
 
 goblin_states = {}
@@ -3467,10 +3468,8 @@ def draw_object(x, y, obj_type, surface, level, width=None, height=None):
         return rect
     if obj_type == "temple_shop":
         rect = pygame.Rect(x, y, width, height)
-        pygame.draw.rect(surface, (60, 40, 20), rect)
-        pygame.draw.rect(surface, (200, 170, 90), rect, 3)
-        tag = small_font.render("CRAFT", True, (255, 235, 180))
-        surface.blit(tag, (rect.centerx - tag.get_width() // 2, rect.centery - tag.get_height() // 2))
+        img = load_image("objects/hutlevel3-removebg-preview.png", width, height)
+        surface.blit(img, (x, y))
         interactive_objects.append({"rect": rect, "type": obj_type, "x": x, "y": y})
         return rect
     if obj_type == "crafting_table":
@@ -6075,7 +6074,7 @@ def handle_interaction():
                     dialogue_active = True
                     dialogue_index = 0
                     set_message("The Time Guide will open the gateway once you have the items.", (255, 200, 0), 3.0)
-            elif obj_type == "temple_shop" and room_key == (2, 0, 0):
+            elif obj_type == "temple_shop" and room_key == (2, 0, 2):
                 temple_shop_visible = True
                 return
             elif obj_type == "datahub" and room_key == (1, 0, 2):
