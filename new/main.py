@@ -895,6 +895,9 @@ lava_platforms = [
     {"base": (520, 420), "axis": "x", "amp": 160, "speed": 1.0, "size": (140, 22), "phase": 2.4},
 ]
 lava_zone_rect = pygame.Rect(0, 560, SCREEN_WIDTH, 240)
+lava_boundary_rects = [
+    pygame.Rect(80, 80, 200, 200), pygame.Rect(80, 540, 200, 200),pygame.Rect(530, 540, 200, 200), pygame.Rect(540, 80, 200, 200), pygame.Rect(300, 300, 200, 200)
+]
 
 echoes_miniboss = None
 echoes_boss_defeated = False
@@ -3998,6 +4001,9 @@ def draw_level3_room_extras(surface, room_key):
             interactive_objects.append({"rect": relic_rect, "type": "relic", "x": relic_rect.x, "y": relic_rect.y})
 
     if room_key == (2, 1, 0):
+        for rect in lava_boundary_rects:
+            hazard_zones.append(rect)
+            pygame.draw.rect(surface, (255, 80, 80), rect, 2)
         for plat in lava_platforms:
             base_x, base_y = plat["base"]
             amp = plat["amp"]
