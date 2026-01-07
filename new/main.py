@@ -3882,8 +3882,8 @@ def draw_echoes_miniboss(surface):
     if room_key != (2, 0, 1):
         return
     rect = echoes_miniboss["rect"]
-    pygame.draw.rect(surface, (120, 60, 150), rect)
-    pygame.draw.rect(surface, (200, 140, 240), rect, 3)
+    img = load_image("npcs/TimeDistortion.png", rect.width, rect.height)
+    surface.blit(img, rect)
     bar_w = rect.width
     bar_x = rect.x
     bar_y = rect.y - 10
