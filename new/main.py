@@ -89,6 +89,11 @@ reloading_active = False
 player_aim_angle = 0.0
 shoot_cooldown_timer = 0.0
 player_has_weapon = False  
+using_sword_weapon = False
+player_sword_swinging = False
+player_sword_angle = 0.0
+player_sword_cooldown = 0.0
+player_sword_hit = False
 
 
 using_laser_weapon = False 
@@ -173,6 +178,12 @@ blacksmith_items = {
         "cyber_only": True,
         "heal_amount": 50
     }
+}
+
+temple_shop_items = {
+    "health_potion": {"name": "Health Potion", "cost": 15, "type": "consumable"},
+    "sword": {"name": "Temple Sword", "cost": 25, "type": "weapon"},
+    "armor": {"name": "Temple Armor", "cost": 25, "type": "armor"}
 }
 
 
@@ -857,6 +868,7 @@ in_combat = False
 combat_enemies = []
 give_herbs_active = False
 cyber_shop_visible = False   
+temple_shop_visible = False
 time_guide_offer_level3 = False
 
 # Level 3 scene state
@@ -1615,7 +1627,8 @@ room_data = {
     (2, 0, 0): {"name": "Temple Entrance",        "objects": [
         {"type": "temple_gate", "x": 740, "y": 250, "width": 40, "height": 240}
     ], "interactive": [
-        {"type": "temple_puzzle", "x": 320, "y": 320, "width": 160, "height": 140}
+        {"type": "temple_puzzle", "x": 320, "y": 320, "width": 160, "height": 140},
+        {"type": "temple_shop", "x": 40, "y": 620, "width": 140, "height": 120}
     ], "npcs": [], "items": []},
     (2, 0, 1): {"name": "Hall of Echoes",        "objects": [], "interactive": [], "npcs": [], "items": []},
     (2, 0, 2): {"name": "Timeless Sanctuary",    "objects": [{"type": "invisible", "x": 740, "y": 30, "width": 125, "height": 325},
@@ -1863,12 +1876,12 @@ def draw_inventory_hud(surface):
     pygame.draw.rect(surface, (30, 30, 40, 200), (section2_x, y_start, section_width, 80))
     pygame.draw.rect(surface, (255, 215, 0), (section2_x, y_start, section_width, 80), 2)
     
-    weapon_name = "Neon Blaster" if using_laser_weapon else "Firearm" if player_has_weapon else "None"
+    weapon_name = "Temple Sword" if using_sword_weapon else "Neon Blaster" if using_laser_weapon else "Firearm" if player_has_weapon else "None"
     weapon_name_text = small_font.render(f"WEAPON: {weapon_name}", True, (255, 255, 255))
     surface.blit(weapon_name_text, (section2_x + 20, y_start + 5))
     
                   
-    if player_has_weapon:
+    if player_has_weapon and not using_sword_weapon:
         ammo_text = font.render(f"{current_ammo}/{max_ammo_count}", True, (255, 255, 255))
         surface.blit(ammo_text, (section2_x + 30, y_start + 25))
         
@@ -1884,6 +1897,9 @@ def draw_inventory_hud(surface):
         if reloading_active:
             reload_text = small_font.render("RELOADING...", True, (255, 50, 50))
             surface.blit(reload_text, (section2_x + 20, y_start + 62))
+    elif using_sword_weapon:
+        ready_text = small_font.render("SWING READY" if player_sword_cooldown <= 0 else "SWINGING", True, (200, 255, 200))
+        surface.blit(ready_text, (section2_x + 20, y_start + 35))
     else:
         no_weapon_text = small_font.render("NO WEAPON", True, (255, 100, 100))
         surface.blit(no_weapon_text, (section2_x + 30, y_start + 30))
@@ -2012,7 +2028,7 @@ def draw_quick_inventory(surface):
                                  
 def draw_enhanced_weapon_hud(surface):
     """Draw an enhanced weapon HUD with more detailed information."""
-    if not player_has_weapon:
+    if not player_has_weapon and not using_sword_weapon:
         return
     
     
@@ -2028,6 +2044,13 @@ def draw_enhanced_weapon_hud(surface):
     surface.blit(panel_bg, (panel_x, panel_y))
     
                       
+    if using_sword_weapon:
+        weapon_type_text = font.render("SWORD", True, (200, 255, 200))
+        surface.blit(weapon_type_text, (panel_x + 10, panel_y + 10))
+        status = "READY" if player_sword_cooldown <= 0 else "COOLDOWN"
+        status_text = font.render(status, True, (255, 255, 255))
+        surface.blit(status_text, (panel_x + 10, panel_y + 40))
+        return
     weapon_color = (0, 200, 255) if using_laser_weapon else (255, 200, 0)
     weapon_type_text = font.render("LASER" if using_laser_weapon else "FIREARM", True, weapon_color)
     surface.blit(weapon_type_text, (panel_x + 10, panel_y + 10))
@@ -2078,7 +2101,8 @@ def draw_enhanced_weapon_hud(surface):
 def enter_level_2():
     """Warp player to Level-2 Rooftop Hideout, reset game state for level 2."""
     global current_room_coords, player_rect, health, max_health, weapon_level, armor_level
-    global player_has_weapon, current_ammo, max_ammo_count, inventory, quests
+    global player_has_weapon, current_ammo, max_ammo_count, inventory, quests, using_sword_weapon
+    global player_sword_swinging, player_sword_angle, player_sword_cooldown, player_sword_hit
     global collected_gold, collected_herbs, collected_potions, collected_keys, collected_timeshards
     global boss_defeated, boss_drop_collected
     
@@ -2096,6 +2120,11 @@ def enter_level_2():
         health = max_health
         
         player_has_weapon = False  
+        using_sword_weapon = False
+        player_sword_swinging = False
+        player_sword_angle = 0.0
+        player_sword_cooldown = 0.0
+        player_sword_hit = False
         current_ammo = 0
         max_ammo_count = 40  
         weapon_level = 1
@@ -2222,7 +2251,8 @@ def enter_level_3():
 def start_level_1():
     """Start a fresh run in Level 1."""
     global current_room_coords, player_rect, health, max_health, weapon_level, armor_level, game_in_progress
-    global player_has_weapon, using_laser_weapon, current_ammo, max_ammo_count
+    global player_has_weapon, using_laser_weapon, current_ammo, max_ammo_count, using_sword_weapon
+    global player_sword_swinging, player_sword_angle, player_sword_cooldown, player_sword_hit
     global inventory, quests, collected_gold, collected_herbs, collected_potions
     global collected_keys, collected_timeshards, collected_credits
     global safe_input, safe_unlocked, safe_visible, cipher_visible, cipher_input
@@ -2239,6 +2269,11 @@ def start_level_1():
     armor_level = 0
     player_has_weapon = False
     using_laser_weapon = False
+    using_sword_weapon = False
+    player_sword_swinging = False
+    player_sword_angle = 0.0
+    player_sword_cooldown = 0.0
+    player_sword_hit = False
     current_ammo = 0
     max_ammo_count = 30
 
@@ -2968,6 +3003,130 @@ def update_bullets(dt):
         if 0 <= i < len(active_bullets):
             active_bullets.pop(i)
 
+def _get_player_sword_rect():
+    radius = 40
+    sword_w, sword_h = 42, 16
+    base_angle = 0.0 if player_facing == "right" else 180.0
+    angle_deg = base_angle + player_sword_angle
+    angle_rad = math.radians(angle_deg)
+    cx = player_rect.centerx + radius * math.cos(angle_rad)
+    cy = player_rect.centery + radius * math.sin(angle_rad)
+    return pygame.Rect(int(cx - sword_w / 2), int(cy - sword_h / 2), sword_w, sword_h), angle_deg
+
+def update_player_sword(dt):
+    """Update sword swing state and apply hits."""
+    global player_sword_swinging, player_sword_angle, player_sword_cooldown, player_sword_hit, kael_defeated
+    if player_sword_cooldown > 0:
+        player_sword_cooldown = max(0.0, player_sword_cooldown - dt / 1000.0)
+    if not player_sword_swinging:
+        return
+    dt_sec = dt / 1000.0
+    player_sword_angle += 360.0 * dt_sec
+    sword_rect, _ = _get_player_sword_rect()
+
+    if not player_sword_hit:
+        sword_damage = 18
+        room_key = tuple(current_room_coords)
+
+        state = goblin_rooms.get(room_key)
+        if state:
+            w, h = get_npc_size("goblin")
+            for goblin in state["active"]:
+                if not goblin.get("alive", True):
+                    continue
+                goblin_rect = pygame.Rect(goblin["x"], goblin["y"], w, h)
+                if sword_rect.colliderect(goblin_rect):
+                    goblin["alive"] = False
+                    if not goblin.get("loot_given"):
+                        inventory["Gold"] += 10
+                        goblin["loot_given"] = True
+                        set_message("+10 Gold (Goblin)", (255, 215, 0), 1.5)
+                    player_sword_hit = True
+                    break
+
+        tb_state = timebandit_rooms.get(room_key)
+        if tb_state and not player_sword_hit:
+            default_w, default_h = get_npc_size("timebandit")
+            for tb in tb_state["active"]:
+                if not tb.get("alive", True):
+                    continue
+                w = int(tb.get("w", default_w))
+                h = int(tb.get("h", default_h))
+                tb_rect = pygame.Rect(tb["x"], tb["y"], w, h)
+                if sword_rect.colliderect(tb_rect):
+                    if tb.get("hp") is not None:
+                        tb["hp"] -= sword_damage
+                        if tb["hp"] <= 0:
+                            tb["alive"] = False
+                    else:
+                        tb["alive"] = False
+                    player_sword_hit = True
+                    break
+
+        if not player_sword_hit and room_key == (2, 0, 1) and echoes_miniboss and not echoes_boss_defeated:
+            if sword_rect.colliderect(echoes_miniboss["rect"]):
+                echoes_miniboss["hp"] -= sword_damage
+                player_sword_hit = True
+
+        if not player_sword_hit and room_key == (2, 1, 2) and kael_boss and not kael_defeated:
+            if sword_rect.colliderect(kael_boss["rect"]):
+                kael_boss["hp"] -= sword_damage
+                if kael_boss["hp"] <= 0:
+                    kael_boss["hp"] = 0
+                    kael_defeated = True
+                    def _to_sanctuary():
+                        global previous_room_coords
+                        current_room_coords[:] = [2, 0, 2]
+                        player_rect.center = (389, 7)
+                        handle_room_entry((2, 0, 2), (2, 1, 2))
+                        previous_room_coords = (2, 0, 2)
+                    start_cutscene([
+                        "Kael falters, the relics pulsing with restored light.",
+                        "The final strike shatters the temporal distortion.",
+                        "A calm silence follows as the altar fades."
+                    ], line_duration=3.0, on_complete=_to_sanctuary)
+                player_sword_hit = True
+
+        if not player_sword_hit:
+            for d in drones:
+                if tuple(d.get("room_key")) != room_key:
+                    continue
+                dr = pygame.Rect(int(d.get("x", 0)), int(d.get("y", 0)), int(d.get("w", 48)), int(d.get("h", 48)))
+                if sword_rect.colliderect(dr):
+                    if d.get("hp") is not None:
+                        d["hp"] -= sword_damage
+                        if d["hp"] <= 0:
+                            d["alive"] = False
+                    player_sword_hit = True
+                    break
+
+    if player_sword_angle >= 180.0:
+        player_sword_swinging = False
+        player_sword_angle = 0.0
+        player_sword_hit = False
+        player_sword_cooldown = 0.4
+
+def draw_player_sword(surface):
+    if not player_sword_swinging:
+        return
+    sword_rect, angle_deg = _get_player_sword_rect()
+    sword_img = load_image("objects/sword.png", sword_rect.width, sword_rect.height)
+    rotated = pygame.transform.rotate(sword_img, -angle_deg)
+    surface.blit(rotated, (sword_rect.x, sword_rect.y))
+
+def try_sword_swing():
+    """Start a sword swing if available."""
+    global player_sword_swinging, player_sword_angle, player_sword_hit
+    if not using_sword_weapon:
+        return False
+    if player_sword_swinging or player_sword_cooldown > 0:
+        return False
+    player_sword_swinging = True
+    player_sword_angle = 0.0
+    player_sword_hit = False
+    set_message("Slash!", (200, 255, 200), 0.6)
+    return True
+
 def draw_bullets(surface):
     
     for bullet in active_bullets:
@@ -3299,6 +3458,14 @@ def draw_object(x, y, obj_type, surface, level, width=None, height=None):
         return rect
     if obj_type == "temple_puzzle":
         rect = pygame.Rect(x, y, width, height)
+        interactive_objects.append({"rect": rect, "type": obj_type, "x": x, "y": y})
+        return rect
+    if obj_type == "temple_shop":
+        rect = pygame.Rect(x, y, width, height)
+        pygame.draw.rect(surface, (60, 40, 20), rect)
+        pygame.draw.rect(surface, (200, 170, 90), rect, 3)
+        tag = small_font.render("CRAFT", True, (255, 235, 180))
+        surface.blit(tag, (rect.centerx - tag.get_width() // 2, rect.centery - tag.get_height() // 2))
         interactive_objects.append({"rect": rect, "type": obj_type, "x": x, "y": y})
         return rect
     if obj_type == "crafting_table":
@@ -3688,7 +3855,7 @@ def update_time_spirits(dt):
     room_key = tuple(current_room_coords)
     if room_key != (2, 2, 0):
         return
-    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or crafting_visible or temple_puzzle_visible:
+    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or crafting_visible or temple_puzzle_visible or temple_shop_visible:
         return
     init_time_spirits()
     dt_sec = dt / 1000.0
@@ -3746,7 +3913,7 @@ def update_cave_guardians(dt):
     room_key = tuple(current_room_coords)
     if room_key != (2, 2, 2):
         return
-    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or crafting_visible or temple_puzzle_visible:
+    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or crafting_visible or temple_puzzle_visible or temple_shop_visible:
         return
     init_cave_guardians()
     dt_sec = dt / 1000.0
@@ -3847,7 +4014,7 @@ def update_echoes_miniboss(dt):
     room_key = tuple(current_room_coords)
     if room_key != (2, 0, 1):
         return
-    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or crafting_visible or temple_puzzle_visible:
+    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or crafting_visible or temple_puzzle_visible or temple_shop_visible:
         return
     dt_sec = dt / 1000.0
     speed_factor = get_time_slow_factor()
@@ -3907,7 +4074,7 @@ def update_kael_boss(dt):
     room_key = tuple(current_room_coords)
     if room_key != (2, 1, 2) or not kael_boss or kael_defeated:
         return
-    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or crafting_visible or temple_puzzle_visible:
+    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or crafting_visible or temple_puzzle_visible or temple_shop_visible:
         return
     dt_sec = dt / 1000.0
     speed_factor = get_time_slow_factor()
@@ -4511,6 +4678,77 @@ def draw_blacksmith_shop(surface):
     
     return item_buttons, close_rect
 
+def draw_temple_shop(surface):
+    """Draw the temple crafting shop interface."""
+    if not temple_shop_visible:
+        return
+
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 210))
+    surface.blit(overlay, (0, 0))
+
+    shop_rect = pygame.Rect(120, 110, SCREEN_WIDTH - 240, SCREEN_HEIGHT - 220)
+    pygame.draw.rect(surface, (40, 30, 20), shop_rect)
+    pygame.draw.rect(surface, (200, 170, 90), shop_rect, 3)
+
+    title = title_font.render("TEMPLE CRAFTING", True, (255, 220, 140))
+    surface.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, shop_rect.y + 10))
+
+    gold_text = font.render(f"Gold: {inventory['Gold']}", True, (255, 215, 0))
+    surface.blit(gold_text, (shop_rect.x + 20, shop_rect.y + 80))
+
+    item_buttons = []
+    y = shop_rect.y + 130
+    for item_id, item in temple_shop_items.items():
+        cost = item["cost"]
+        item_rect = pygame.Rect(shop_rect.x + 30, y, shop_rect.width - 60, 80)
+        y += 100
+
+        can_purchase = inventory["Gold"] >= cost
+        status_text = ""
+        if item_id == "sword" and using_sword_weapon:
+            can_purchase = False
+            status_text = "OWNED"
+        elif item_id == "armor" and armor_level >= ARMOR_MAX_LEVEL:
+            can_purchase = False
+            status_text = "MAXED"
+
+        bg_color = (50, 50, 60) if can_purchase else (60, 40, 40)
+        border_color = (150, 150, 200) if can_purchase else (200, 120, 120)
+        pygame.draw.rect(surface, bg_color, item_rect)
+        pygame.draw.rect(surface, border_color, item_rect, 3)
+
+        name_text = font.render(item["name"], True, (255, 255, 255))
+        cost_text = font.render(f"{cost} Gold", True, (255, 215, 0))
+        surface.blit(name_text, (item_rect.x + 10, item_rect.y + 10))
+        surface.blit(cost_text, (item_rect.right - 110, item_rect.y + 10))
+
+        if status_text:
+            status = font.render(status_text, True, (120, 255, 120))
+            surface.blit(status, (item_rect.right - 120, item_rect.y + 42))
+        else:
+            button_rect = pygame.Rect(item_rect.right - 110, item_rect.y + 40, 90, 30)
+            if can_purchase:
+                pygame.draw.rect(surface, (80, 120, 80), button_rect)
+                pygame.draw.rect(surface, (120, 200, 120), button_rect, 2)
+                button_text = small_font.render("BUY", True, (200, 255, 200))
+                item_buttons.append((button_rect, item_id))
+            else:
+                pygame.draw.rect(surface, (120, 80, 80), button_rect)
+                pygame.draw.rect(surface, (200, 120, 120), button_rect, 2)
+                button_text = small_font.render("BUY", True, (255, 200, 200))
+            surface.blit(button_text, (button_rect.centerx - button_text.get_width() // 2,
+                                       button_rect.centery - button_text.get_height() // 2))
+
+    close_rect = pygame.Rect(shop_rect.centerx - 50, shop_rect.bottom - 50, 100, 40)
+    pygame.draw.rect(surface, (120, 80, 80), close_rect)
+    pygame.draw.rect(surface, (200, 120, 120), close_rect, 2)
+    close_text = font.render("CLOSE", True, (255, 255, 255))
+    surface.blit(close_text, (close_rect.centerx - close_text.get_width() // 2,
+                              close_rect.centery - close_text.get_height() // 2))
+
+    return item_buttons, close_rect
+
 
 def _can_purchase_item(item_id):
     """Check if an item can be purchased based on game state."""
@@ -4608,6 +4846,54 @@ def handle_blacksmith_purchase(item_id):
             item["purchased"] = True
     
     return True
+
+def handle_temple_shop_purchase(item_id):
+    """Handle purchases from the temple crafting shop."""
+    global player_has_weapon, using_laser_weapon, using_sword_weapon, current_ammo, health, max_health, inventory, armor_level
+
+    item = temple_shop_items[item_id]
+    if inventory["Gold"] < item["cost"]:
+        set_message(f"Not enough gold for {item['name']}!", (255, 0, 0), 2.0)
+        return False
+
+    if item_id == "sword":
+        if using_sword_weapon:
+            set_message("You already have a sword.", (255, 200, 0), 2.0)
+            return False
+        inventory["Gold"] -= item["cost"]
+        player_has_weapon = False
+        using_laser_weapon = False
+        using_sword_weapon = True
+        current_ammo = max_ammo_count
+        if "buy_weapon" in quests:
+            quests["buy_weapon"]["complete"] = True
+        if "upgrade_sword" in quests:
+            quests["upgrade_sword"]["active"] = True
+        set_message("Temple Sword acquired! Press SPACE to swing.", (0, 255, 0), 3.0)
+        return True
+
+    if item_id == "armor":
+        if armor_level >= ARMOR_MAX_LEVEL:
+            set_message("Armor is already at maximum level!", (255, 200, 0), 2.0)
+            return False
+        inventory["Gold"] -= item["cost"]
+        prev_max = max_health
+        armor_level += 1
+        max_health = 100 + (armor_level * 20)
+        if prev_max > 0:
+            health = min(max_health, int((health / prev_max) * max_health))
+        else:
+            health = max_health
+        set_message(f"Armor upgraded to level {armor_level}! Max health: {max_health}", (0, 255, 0), 2.0)
+        return True
+
+    if item_id == "health_potion":
+        inventory["Gold"] -= item["cost"]
+        inventory["Health Potions"] += 1
+        set_message("Purchased Health Potion!", (0, 255, 0), 2.0)
+        return True
+
+    return False
 
 
 def draw_safe_puzzle(surface):
@@ -5105,7 +5391,7 @@ def update_goblins(dt):
     state = goblin_rooms.get(room_key)
     if not state:
         return
-    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or temple_puzzle_visible or crafting_visible:
+    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or temple_puzzle_visible or crafting_visible or temple_shop_visible:
         return
     global goblin_contact_cooldown, health
 
@@ -5229,7 +5515,7 @@ def update_timebandits(dt):
     state = timebandit_rooms.get(room_key)
     if not state:
         return
-    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or temple_puzzle_visible or crafting_visible:
+    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or temple_puzzle_visible or crafting_visible or temple_shop_visible:
         return
     global goblin_contact_cooldown, health, player_electrified_timer
 
@@ -5512,7 +5798,8 @@ def normalize_save_name(name):
 def save_game(save_name):
     """Save lightweight player progress to disk."""
     global current_room_coords, player_rect, health, max_health, weapon_level, armor_level
-    global player_has_weapon, using_laser_weapon, current_ammo, max_ammo_count, inventory, quests
+    global player_has_weapon, using_laser_weapon, using_sword_weapon, current_ammo, max_ammo_count, inventory, quests
+    global player_sword_swinging, player_sword_angle, player_sword_cooldown, player_sword_hit
     global boss_defeated, boss_drop_collected, boss_initialized, boss2_initialized
     try:
         normalized = normalize_save_name(save_name)
@@ -5530,6 +5817,7 @@ def save_game(save_name):
             "armor_level": int(armor_level),
             "player_has_weapon": bool(player_has_weapon),
             "using_laser_weapon": bool(using_laser_weapon),
+            "using_sword_weapon": bool(using_sword_weapon),
             "current_ammo": int(current_ammo),
             "max_ammo_count": int(max_ammo_count),
             "inventory": dict(inventory),
@@ -5554,10 +5842,10 @@ def save_game(save_name):
 def load_game(save_name):
     """Load player progress from disk."""
     global current_room_coords, player_rect, health, max_health, weapon_level, armor_level, game_in_progress
-    global player_has_weapon, using_laser_weapon, current_ammo, max_ammo_count, inventory, quests
+    global player_has_weapon, using_laser_weapon, using_sword_weapon, current_ammo, max_ammo_count, inventory, quests
     global boss_defeated, boss_drop_collected, boss_initialized, boss2_initialized
     global game_state, dialogue_active, hud_visible, map_visible, quest_log_visible, cutscene_active
-    global safe_visible, maze_visible, cipher_visible, temple_puzzle_visible, crafting_visible, race_active
+    global safe_visible, maze_visible, cipher_visible, temple_puzzle_visible, crafting_visible, temple_shop_visible, race_active
     try:
         normalized = normalize_save_name(save_name)
         if not normalized:
@@ -5579,6 +5867,11 @@ def load_game(save_name):
         armor_level = int(payload.get("armor_level", armor_level))
         player_has_weapon = bool(payload.get("player_has_weapon", player_has_weapon))
         using_laser_weapon = bool(payload.get("using_laser_weapon", using_laser_weapon))
+        using_sword_weapon = bool(payload.get("using_sword_weapon", using_sword_weapon))
+        player_sword_swinging = False
+        player_sword_angle = 0.0
+        player_sword_cooldown = 0.0
+        player_sword_hit = False
         current_ammo = int(payload.get("current_ammo", current_ammo))
         max_ammo_count = int(payload.get("max_ammo_count", max_ammo_count))
         inventory = dict(payload.get("inventory", inventory))
@@ -5598,6 +5891,7 @@ def load_game(save_name):
         cipher_visible = False
         temple_puzzle_visible = False
         crafting_visible = False
+        temple_shop_visible = False
         race_active = False
         global last_save_name
         last_save_name = normalized
@@ -5615,10 +5909,10 @@ def handle_interaction():
     # this is where dialogues shops and puzzles are triggered
     """Handle F key interactions."""
     global dialogue_active, current_dialogue, dialogue_index, upgrade_shop_visible
-    global safe_visible, safe_input, safe_unlocked, maze_visible, cyber_shop_visible, time_guide_offer_level3
+    global safe_visible, safe_input, safe_unlocked, maze_visible, cyber_shop_visible, temple_shop_visible, time_guide_offer_level3
     global temple_puzzle_visible, crafting_visible, cave_relic_collected, cave_relic_available
 
-    if cutscene_active or temple_puzzle_visible or crafting_visible:
+    if cutscene_active or temple_puzzle_visible or crafting_visible or temple_shop_visible:
         return
     
     room_key = tuple(current_room_coords)
@@ -5776,6 +6070,9 @@ def handle_interaction():
                     dialogue_active = True
                     dialogue_index = 0
                     set_message("The Time Guide will open the gateway once you have the items.", (255, 200, 0), 3.0)
+            elif obj_type == "temple_shop" and room_key == (2, 0, 0):
+                temple_shop_visible = True
+                return
             elif obj_type == "datahub" and room_key == (1, 0, 2):
                                                                 
                 try:
@@ -6036,6 +6333,15 @@ while running:
                 
                 if close_rect.collidepoint(mouse_pos):
                     cyber_shop_visible = False
+            elif game_state == "playing" and temple_shop_visible:
+                item_buttons, close_rect = draw_temple_shop(screen)
+
+                for button_rect, item_id in item_buttons:
+                    if button_rect.collidepoint(mouse_pos):
+                        handle_temple_shop_purchase(item_id)
+
+                if close_rect.collidepoint(mouse_pos):
+                    temple_shop_visible = False
             
             elif game_state == "playing" and safe_visible:
                 buttons, clear_rect, close_rect = draw_safe_puzzle(screen)
@@ -6150,6 +6456,9 @@ while running:
                 elif cyber_shop_visible:
                     if event.key == pygame.K_ESCAPE:
                         cyber_shop_visible = False
+                elif temple_shop_visible:
+                    if event.key == pygame.K_ESCAPE:
+                        temple_shop_visible = False
                 
                 elif event.key == pygame.K_e:
                     hud_visible = not hud_visible
@@ -6204,14 +6513,18 @@ while running:
                 
                
                 elif event.key == pygame.K_SPACE and not upgrade_shop_visible and not dialogue_active and not safe_visible and not maze_visible and not race_active:
-                    if shoot_bullet():
-                        set_message("Pew!", (255, 255, 0), 0.5)
-                    elif not player_has_weapon:
-                        set_message("You need a weapon! Visit the blacksmith.", (255, 200, 0), 2.0)
-                    elif reloading_active:
-                        set_message("Reloading...", (255, 200, 0), 0.5)
-                    elif current_ammo == 0:
-                        set_message("Out of ammo! Buy more from blacksmith.", (255, 0, 0), 1.0)
+                    if using_sword_weapon:
+                        if not try_sword_swing():
+                            set_message("Sword not ready.", (255, 200, 100), 0.6)
+                    else:
+                        if shoot_bullet():
+                            set_message("Pew!", (255, 255, 0), 0.5)
+                        elif not player_has_weapon:
+                            set_message("You need a weapon! Visit the blacksmith.", (255, 200, 0), 2.0)
+                        elif reloading_active:
+                            set_message("Reloading...", (255, 200, 0), 0.5)
+                        elif current_ammo == 0:
+                            set_message("Out of ammo! Buy more from blacksmith.", (255, 0, 0), 1.0)
                 
                 
                 elif event.key == pygame.K_r and player_has_weapon and not reloading_active and current_ammo < max_ammo_count:
@@ -6270,7 +6583,7 @@ while running:
             player_facing = "left"
         
         
-        if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or safe_visible or maze_visible or race_active or temple_puzzle_visible or crafting_visible:
+        if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or safe_visible or maze_visible or race_active or temple_puzzle_visible or crafting_visible or temple_shop_visible:
             mv_x, mv_y = 0, 0
 
         if race_active:
@@ -6345,6 +6658,7 @@ while running:
                 reload_timer = 0.0
         
         update_bullets(dt)
+        update_player_sword(dt)
         
         pickup_items()
 
@@ -6361,6 +6675,7 @@ while running:
         except Exception:
             pass
         draw_player(screen, player_rect, dt, player_moving)
+        draw_player_sword(screen)
         draw_player_pointer(screen, player_rect)
         
         
@@ -6378,6 +6693,7 @@ while running:
         draw_cutscene(screen)
         draw_blacksmith_shop(screen)
         draw_cyber_shop(screen)
+        draw_temple_shop(screen)
         draw_enhanced_weapon_hud(screen)  
 
 
@@ -6429,7 +6745,7 @@ while running:
                 near_object = True
                 break
         
-        if near_object and not dialogue_active and not cutscene_active and not upgrade_shop_visible and not safe_visible and not maze_visible and not cipher_visible and not race_active and not temple_puzzle_visible and not crafting_visible:
+        if near_object and not dialogue_active and not cutscene_active and not upgrade_shop_visible and not safe_visible and not maze_visible and not cipher_visible and not race_active and not temple_puzzle_visible and not crafting_visible and not temple_shop_visible:
             hint = small_font.render("Press F to Interact", True, (255, 255, 255))
             screen.blit(hint, (player_rect.centerx - 40, player_rect.top - 25))
             
