@@ -979,6 +979,17 @@ npc_dialogues = {
         "Time Guide: To open the gateway, present 6 Keycards and 2 Time Shards.",
         "Time Guide: Return when you have them, and I will send you onward.",
     ],
+    (2, 1, 1, "alchemist"): [
+        "Temple Alchemist: Welcome to the ruins, traveler.",
+        "Temple Alchemist: Our potion uses 2 herbs and 1 gold per brew.",
+        "Temple Alchemist: Use the crafting table and press C to mix.",
+        "Temple Alchemist: Each session has limited uses, so plan ahead.",
+    ],
+    (2, 1, 1, "apprentice"): [
+        "Apprentice Brewer: The mix is simple but precise.",
+        "Apprentice Brewer: Gather herbs in the jungle path if you're short.",
+        "Apprentice Brewer: When you're ready, confirm and return to the journey.",
+    ],
 }
 
              
@@ -1585,7 +1596,10 @@ room_data = {
     (2, 1, 0): {"name": "Lava Chambers",          "objects": [], "interactive": [], "npcs": [], "items": []},
     (2, 1, 1): {"name": "Ruins Plaza",           "objects": [], "interactive": [
         {"type": "crafting_table", "x": 330, "y": 350, "width": 140, "height": 90}
-    ], "npcs": [], "items": []},
+    ], "npcs": [
+        {"id": "alchemist", "x": 220, "y": 420, "name": "Temple Alchemist"},
+        {"id": "apprentice", "x": 520, "y": 420, "name": "Apprentice Brewer"},
+    ], "items": []},
 
     (2, 1, 2): {"name": "Temporal Altar",        "objects": [
         {"type": "altar", "x": 330, "y": 250, "width": 140, "height": 120}
