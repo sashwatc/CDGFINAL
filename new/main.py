@@ -2916,7 +2916,7 @@ def update_bullets(dt):
                     def _to_sanctuary():
                         global previous_room_coords
                         current_room_coords[:] = [2, 0, 2]
-                        player_rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 100)
+                        player_rect.center = (389, 7)
                         handle_room_entry((2, 0, 2), (2, 1, 2))
                         previous_room_coords = (2, 0, 2)
                     start_cutscene([
@@ -5068,6 +5068,10 @@ def room_transition():
     
     if player_rect.right > SCREEN_WIDTH:
         if col < MAP_COLS - 1:
+            if current_room_coords[0] == 2 and current_room_coords[1] == 0 and current_room_coords[2] == 1:
+                current_room_coords[2] = 2
+                player_rect.center = (13, 370)
+                return
             current_room_coords[2] += 1
             player_rect.left = 0
         else:
@@ -5082,6 +5086,10 @@ def room_transition():
     
     elif player_rect.bottom > SCREEN_HEIGHT:
         if row > 0:
+            if current_room_coords[0] == 2 and current_room_coords[1] == 1 and current_room_coords[2] == 2:
+                current_room_coords[1] = 0
+                player_rect.center = (389, 7)
+                return
             current_room_coords[1] -= 1
             player_rect.top = 0
         else:
