@@ -478,9 +478,14 @@ def get_npc_size(npc_type):
         return (70, 100)
     elif npc_type == "boss2":
         return (110, 130)
+    elif npc_type in ["alchemist", "apprentice"]:
+        return (70, 90)
     return (35, 55)
 
 def load_npc_image(npc_type):
+    if npc_type in ["alchemist", "apprentice"]:
+        size = get_npc_size(npc_type)
+        return load_image("npcs/TempleAlchemist-removebg-preview.png", size[0], size[1])
     size = get_npc_size(npc_type)
                                                                                            
     primary = f"npcs/{npc_type}.png"
@@ -3470,12 +3475,12 @@ def draw_object(x, y, obj_type, surface, level, width=None, height=None):
         return rect
     if obj_type == "crafting_table":
         rect = pygame.Rect(x, y, width, height)
-        pygame.draw.rect(surface, (40, 60, 40), rect)
-        pygame.draw.rect(surface, (120, 200, 140), rect, 3)
-        pygame.draw.line(surface, (220, 220, 180), rect.topleft, rect.bottomright, 2)
-        pygame.draw.line(surface, (220, 220, 180), rect.topright, rect.bottomleft, 2)
+        if DEBUG_MODE:
+            debug_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+            debug_surface.fill((40, 60, 40, 100))
+            surface.blit(debug_surface, (x, y))
+            pygame.draw.rect(surface, (120, 200, 140), rect, 2)
         interactive_objects.append({"rect": rect, "type": obj_type, "x": x, "y": y})
-        colliders.append(rect)
         return rect
     if obj_type == "altar":
         rect = pygame.Rect(x, y, width, height)
@@ -4046,7 +4051,7 @@ def draw_echoes_miniboss(surface):
     if room_key != (2, 0, 1):
         return
     rect = echoes_miniboss["rect"]
-    img = load_image("npcs/TimeDistortion.png", rect.width, rect.height)
+    img = load_image("npcs/TimeDistortion-removebg-preview.png", rect.width, rect.height)
     surface.blit(img, rect)
     bar_w = rect.width
     bar_x = rect.x
