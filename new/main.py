@@ -3299,14 +3299,7 @@ def draw_object(x, y, obj_type, surface, level, width=None, height=None):
         return rect
     if obj_type == "temple_puzzle":
         rect = pygame.Rect(x, y, width, height)
-        if DEBUG_MODE:
-            debug_surface = pygame.Surface((width, height), pygame.SRCALPHA)
-            debug_surface.fill((60, 50, 30, 80))
-            surface.blit(debug_surface, (x, y))
-            pygame.draw.rect(surface, (220, 190, 120), rect, 2)
-            pygame.draw.circle(surface, (220, 200, 100), rect.center, max(8, rect.width // 6), 2)
         interactive_objects.append({"rect": rect, "type": obj_type, "x": x, "y": y})
-        colliders.append(rect)
         return rect
     if obj_type == "crafting_table":
         rect = pygame.Rect(x, y, width, height)
@@ -3886,8 +3879,8 @@ def draw_echoes_miniboss(surface):
     if room_key != (2, 0, 1):
         return
     rect = echoes_miniboss["rect"]
-    pygame.draw.rect(surface, (120, 60, 150), rect)
-    pygame.draw.rect(surface, (200, 140, 240), rect, 3)
+    img = load_image("npcs/TimeDistortion.png", rect.width, rect.height)
+    surface.blit(img, rect)
     bar_w = rect.width
     bar_x = rect.x
     bar_y = rect.y - 10
