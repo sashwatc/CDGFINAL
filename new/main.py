@@ -30,7 +30,7 @@ MAP_ROWS = 3
 TOTAL_LEVELS = 3
 DEBUG_MODE = True # this is for debugging and adding invisible barriers so that we can see where they are
 DEBUG_SKIP_LEVEL2 = True  
-# Level 2 spawn point (consistent spawn when entering Level 2)
+# Level 2 spawn point 
 LEVEL2_SPAWN_POINT = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
 # ------------ LEVEL 2 (CYBERPUNK) ------------
                                                
@@ -2380,8 +2380,9 @@ def check_boss_hit():
                 set_message("Goblin King defeated! Collect the drops!", (0, 255, 0), 3.0)
     
     
-    for i in sorted(bullets_to_remove, reverse=True):
-        active_bullets.pop(i)
+    for i in sorted(set(bullets_to_remove), reverse=True):
+        if 0 <= i < len(active_bullets):
+            active_bullets.pop(i)
 
 def draw_boss_drops(surface):
     """Draw the boss drops after defeat."""
@@ -2630,8 +2631,9 @@ def check_boss2_hit():
                     room_info.setdefault("items", []).append({"type": "timeshard", "x": boss2["rect"].centerx - 25, "y": boss2["rect"].centery - 25, "id": "timeshard_ai_1"})
                     room_info.setdefault("items", []).append({"type": "keycard", "x": boss2["rect"].centerx + 15, "y": boss2["rect"].centery - 25, "id": "keycard_ai_1"})
                 set_message("AI Core defeated! Drops spawned in the room.", (0, 255, 0), 3.0)
-    for i in sorted(bullets_to_remove, reverse=True):
-        active_bullets.pop(i)
+    for i in sorted(set(bullets_to_remove), reverse=True):
+        if 0 <= i < len(active_bullets):
+            active_bullets.pop(i)
 
 def draw_boss2(surface):
     global boss2_phase, boss2_laser_charge_index, boss2_lasers
@@ -2941,8 +2943,9 @@ def update_bullets(dt):
         check_boss2_hit()
     
 
-    for i in sorted(bullets_to_remove, reverse=True):
-        active_bullets.pop(i)
+    for i in sorted(set(bullets_to_remove), reverse=True):
+        if 0 <= i < len(active_bullets):
+            active_bullets.pop(i)
 
 def draw_bullets(surface):
     
@@ -5562,11 +5565,13 @@ def handle_interaction():
                 required_keycards = 3
                 required_shards = 0
                 have_keycards = inventory.get("Keycards", 0)
+                have_keys = inventory.get("Keys", 0)
+                effective_keycards = max(have_keycards, have_keys)
                 have_shards = inventory.get("Time Shards", 0)
 
                 missing = []
-                if have_keycards < required_keycards:
-                    missing.append(f"{required_keycards - have_keycards} Keycard(s)")
+                if effective_keycards < required_keycards:
+                    missing.append(f"{required_keycards - effective_keycards} Keycard(s)")
                 if required_shards > 0 and have_shards < required_shards:
                     missing.append(f"{required_shards - have_shards} Time Shard(s)")
 
@@ -5987,9 +5992,9 @@ while running:
         mv_y = (keys_pressed[pygame.K_s] or keys_pressed[pygame.K_DOWN]) - (keys_pressed[pygame.K_w] or keys_pressed[pygame.K_UP])
         
        
-        if mouse_x > player_rect.centerx + 10:  
+        if mv_x > 0:
             player_facing = "right"
-        elif mouse_x < player_rect.centerx - 10:
+        elif mv_x < 0:
             player_facing = "left"
         
         
