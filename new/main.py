@@ -9,6 +9,8 @@ import traceback
 import os
 import math
 import random
+import json
+import json
                                                                                
 
 pygame.init()
@@ -30,6 +32,7 @@ MAP_ROWS = 3
 TOTAL_LEVELS = 3
 DEBUG_MODE = True # this is for debugging and adding invisible barriers so that we can see where they are
 DEBUG_SKIP_LEVEL2 = True  
+SAVE_DIR = "saves"
 # Level 2 spawn point 
 LEVEL2_SPAWN_POINT = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
 # ------------ LEVEL 2 (CYBERPUNK) ------------
@@ -2201,7 +2204,7 @@ def enter_level_3():
 
 def start_level_1():
     """Start a fresh run in Level 1."""
-    global current_room_coords, player_rect, health, max_health, weapon_level, armor_level
+    global current_room_coords, player_rect, health, max_health, weapon_level, armor_level, game_in_progress
     global player_has_weapon, using_laser_weapon, current_ammo, max_ammo_count
     global inventory, quests, collected_gold, collected_herbs, collected_potions
     global collected_keys, collected_timeshards, collected_credits
@@ -2211,6 +2214,7 @@ def start_level_1():
 
     current_room_coords[:] = [0, 0, 0]
     player_rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+    game_in_progress = True
 
     max_health = 100
     health = max_health
@@ -4846,15 +4850,77 @@ def draw_main_menu():
     button_width, button_height = 300, 60
     button_x = SCREEN_WIDTH//2 - button_width//2
     
-    play_button = create_button("PLAY", button_x, 300, button_width, button_height, play_button_hover)
-    how_to_button = create_button("HOW TO PLAY", button_x, 380, button_width, button_height, how_to_button_hover)
-    about_button = create_button("ABOUT", button_x, 460, button_width, button_height, about_button_hover)
+    play_label = "RESUME" if game_in_progress else "PLAY"
+    play_button = create_button(play_label, button_x, 280, button_width, button_height, play_button_hover)
+    load_button = create_button("LOAD", button_x, 360, button_width, button_height, load_button_hover)
+    how_to_button = create_button("HOW TO PLAY", button_x, 440, button_width, button_height, how_to_button_hover)
+    about_button = create_button("ABOUT", button_x, 520, button_width, button_height, about_button_hover)
     
             
     footer = small_font.render("Made by Arjun Tambe, Shuban Nannisetty and Charanjit Kukkadapu.", True, (150, 150, 150))
     screen.blit(footer, (SCREEN_WIDTH//2 - footer.get_width()//2, SCREEN_HEIGHT - 40))
     
-    return play_button, how_to_button, about_button
+    return play_button, load_button, how_to_button, about_button
+
+def draw_save_prompt():
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 180))
+    screen.blit(overlay, (0, 0))
+
+    box = pygame.Rect(140, 240, SCREEN_WIDTH - 280, 220)
+    pygame.draw.rect(screen, (30, 30, 50), box)
+    pygame.draw.rect(screen, (255, 215, 0), box, 3)
+
+    title = font.render("Would you like to save before quitting?", True, (255, 255, 255))
+    screen.blit(title, (box.centerx - title.get_width() // 2, box.y + 30))
+
+    yes_rect = create_button("YES", box.x + 50, box.y + 120, 180, 50, False)
+    no_rect = create_button("NO", box.right - 230, box.y + 120, 180, 50, False)
+    return yes_rect, no_rect
+
+def draw_save_name_prompt(name_text):
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 180))
+    screen.blit(overlay, (0, 0))
+
+    box = pygame.Rect(140, 220, SCREEN_WIDTH - 280, 260)
+    pygame.draw.rect(screen, (30, 30, 50), box)
+    pygame.draw.rect(screen, (255, 215, 0), box, 3)
+
+    title = font.render("Enter a save name:", True, (255, 255, 255))
+    screen.blit(title, (box.centerx - title.get_width() // 2, box.y + 30))
+
+    input_box = pygame.Rect(box.x + 40, box.y + 80, box.width - 80, 46)
+    pygame.draw.rect(screen, (10, 10, 20), input_box)
+    pygame.draw.rect(screen, (120, 120, 140), input_box, 2)
+    input_text = font.render(name_text, True, (200, 255, 200))
+    screen.blit(input_text, (input_box.x + 10, input_box.y + 8))
+
+    save_rect = create_button("SAVE", box.x + 50, box.y + 160, 180, 50, False)
+    cancel_rect = create_button("CANCEL", box.right - 230, box.y + 160, 180, 50, False)
+    return save_rect, cancel_rect
+
+def draw_load_menu(name_text):
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 180))
+    screen.blit(overlay, (0, 0))
+
+    box = pygame.Rect(140, 220, SCREEN_WIDTH - 280, 260)
+    pygame.draw.rect(screen, (30, 30, 50), box)
+    pygame.draw.rect(screen, (255, 215, 0), box, 3)
+
+    title = font.render("Load game - enter save name:", True, (255, 255, 255))
+    screen.blit(title, (box.centerx - title.get_width() // 2, box.y + 30))
+
+    input_box = pygame.Rect(box.x + 40, box.y + 80, box.width - 80, 46)
+    pygame.draw.rect(screen, (10, 10, 20), input_box)
+    pygame.draw.rect(screen, (120, 120, 140), input_box, 2)
+    input_text = font.render(name_text, True, (200, 255, 200))
+    screen.blit(input_text, (input_box.x + 10, input_box.y + 8))
+
+    load_rect = create_button("LOAD", box.x + 50, box.y + 160, 180, 50, False)
+    cancel_rect = create_button("CANCEL", box.right - 230, box.y + 160, 180, 50, False)
+    return load_rect, cancel_rect
 
 def draw_how_to_play():
     """Draw the how to play screen."""
@@ -4892,14 +4958,14 @@ def draw_how_to_play():
         "• Defeat the Goblin King boss in the Throne Room"
     ]
     
-    y = content_box.y + 20
+    y = content_box.y + 16
     for line in instructions:
         if "CONTROLS:" in line or "GAMEPLAY:" in line:
             text = font.render(line, True, (255, 180, 0))
         else:
             text = small_font.render(line, True, (220, 220, 220))
         screen.blit(text, (content_box.x + 20, y))
-        y += 30
+        y += text.get_height() + 6
     
                  
     back_button = create_button("BACK", SCREEN_WIDTH//2 - 100, SCREEN_HEIGHT - 80, 200, 50, back_button_hover)
@@ -5418,6 +5484,110 @@ def set_message(text, color, duration):
     global hud_message, hud_message_timer, hud_message_color
     hud_message, hud_message_color, hud_message_timer = text, color, duration
 
+def normalize_save_name(name):
+    cleaned = "".join(ch for ch in name.strip() if ch.isalnum() or ch in ("_", "-"))
+    return cleaned.strip("_-")[:24]
+
+def save_game(save_name):
+    """Save lightweight player progress to disk."""
+    global current_room_coords, player_rect, health, max_health, weapon_level, armor_level
+    global player_has_weapon, using_laser_weapon, current_ammo, max_ammo_count, inventory, quests
+    global boss_defeated, boss_drop_collected, boss_initialized, boss2_initialized
+    try:
+        normalized = normalize_save_name(save_name)
+        if not normalized:
+            set_message("Enter a save name.", (255, 200, 100), 1.5)
+            return False
+        os.makedirs(SAVE_DIR, exist_ok=True)
+        payload = {
+            "version": 1,
+            "room": list(current_room_coords),
+            "pos": [int(player_rect.centerx), int(player_rect.centery)],
+            "health": int(health),
+            "max_health": int(max_health),
+            "weapon_level": int(weapon_level),
+            "armor_level": int(armor_level),
+            "player_has_weapon": bool(player_has_weapon),
+            "using_laser_weapon": bool(using_laser_weapon),
+            "current_ammo": int(current_ammo),
+            "max_ammo_count": int(max_ammo_count),
+            "inventory": dict(inventory),
+            "quests": dict(quests),
+            "boss_defeated": bool(boss_defeated),
+            "boss_drop_collected": bool(boss_drop_collected),
+            "boss_initialized": bool(boss_initialized),
+            "boss2_initialized": bool(boss2_initialized),
+        }
+        save_path = os.path.join(SAVE_DIR, f"{normalized}.json")
+        with open(save_path, "w") as f:
+            json.dump(payload, f)
+        global last_save_name
+        last_save_name = normalized
+        set_message("Game saved.", (120, 255, 120), 1.5)
+        return True
+    except Exception as e:
+        set_message("Save failed.", (255, 100, 100), 2.0)
+        print("save_game error:", e)
+        return False
+
+def load_game(save_name):
+    """Load player progress from disk."""
+    global current_room_coords, player_rect, health, max_health, weapon_level, armor_level, game_in_progress
+    global player_has_weapon, using_laser_weapon, current_ammo, max_ammo_count, inventory, quests
+    global boss_defeated, boss_drop_collected, boss_initialized, boss2_initialized
+    global game_state, dialogue_active, hud_visible, map_visible, quest_log_visible, cutscene_active
+    global safe_visible, maze_visible, cipher_visible, temple_puzzle_visible, crafting_visible, race_active
+    try:
+        normalized = normalize_save_name(save_name)
+        if not normalized:
+            set_message("Enter a save name.", (255, 200, 100), 1.5)
+            return False
+        save_path = os.path.join(SAVE_DIR, f"{normalized}.json")
+        if not os.path.exists(save_path):
+            set_message("No save found.", (255, 200, 100), 1.5)
+            return False
+        with open(save_path, "r") as f:
+            payload = json.load(f)
+        room = payload.get("room", [0, 0, 0])
+        pos = payload.get("pos", [SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2])
+        current_room_coords[:] = [int(room[0]), int(room[1]), int(room[2])]
+        player_rect.center = (int(pos[0]), int(pos[1]))
+        health = int(payload.get("health", health))
+        max_health = int(payload.get("max_health", max_health))
+        weapon_level = int(payload.get("weapon_level", weapon_level))
+        armor_level = int(payload.get("armor_level", armor_level))
+        player_has_weapon = bool(payload.get("player_has_weapon", player_has_weapon))
+        using_laser_weapon = bool(payload.get("using_laser_weapon", using_laser_weapon))
+        current_ammo = int(payload.get("current_ammo", current_ammo))
+        max_ammo_count = int(payload.get("max_ammo_count", max_ammo_count))
+        inventory = dict(payload.get("inventory", inventory))
+        quests = dict(payload.get("quests", quests))
+        boss_defeated = bool(payload.get("boss_defeated", boss_defeated))
+        boss_drop_collected = bool(payload.get("boss_drop_collected", boss_drop_collected))
+        boss_initialized = bool(payload.get("boss_initialized", boss_initialized))
+        boss2_initialized = bool(payload.get("boss2_initialized", boss2_initialized))
+        game_state = "playing"
+        dialogue_active = False
+        hud_visible = False
+        map_visible = False
+        quest_log_visible = False
+        cutscene_active = False
+        safe_visible = False
+        maze_visible = False
+        cipher_visible = False
+        temple_puzzle_visible = False
+        crafting_visible = False
+        race_active = False
+        global last_save_name
+        last_save_name = normalized
+        game_in_progress = True
+        set_message("Game loaded.", (120, 255, 120), 1.5)
+        return True
+    except Exception as e:
+        set_message("Load failed.", (255, 100, 100), 2.0)
+        print("load_game error:", e)
+        return False
+
 def handle_interaction():
     # handle_interaction is called when the player presses the interact key
     # it looks for nearby npcs objects and opens menus or starts quests
@@ -5688,9 +5858,18 @@ def handle_safe_input(number):
                   
 running = True
 play_button_hover = False
+load_button_hover = False
 how_to_button_hover = False
 about_button_hover = False
 back_button_hover = False
+save_prompt_visible = False
+save_name_prompt_visible = False
+load_menu_visible = False
+save_name_input = ""
+load_name_input = ""
+pending_quit = False
+last_save_name = ""
+game_in_progress = False
 
 
 boss_initialized = False
@@ -5713,13 +5892,81 @@ while running:
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-            running = False
+            pending_quit = True
+            save_name_prompt_visible = False
+            load_menu_visible = False
+            if last_save_name:
+                save_game(last_save_name)
+                running = False
+            else:
+                save_prompt_visible = True
+            continue
+
+        if save_prompt_visible or save_name_prompt_visible or load_menu_visible:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if save_prompt_visible:
+                    yes_rect, no_rect = draw_save_prompt()
+                    if yes_rect.collidepoint(mouse_pos):
+                        save_prompt_visible = False
+                        save_name_prompt_visible = True
+                        save_name_input = ""
+                    elif no_rect.collidepoint(mouse_pos):
+                        running = False
+                elif save_name_prompt_visible:
+                    save_rect, cancel_rect = draw_save_name_prompt(save_name_input)
+                    if save_rect.collidepoint(mouse_pos):
+                        if save_game(save_name_input):
+                            save_name_prompt_visible = False
+                            if pending_quit:
+                                running = False
+                            pending_quit = False
+                    elif cancel_rect.collidepoint(mouse_pos):
+                        save_name_prompt_visible = False
+                        pending_quit = False
+                elif load_menu_visible:
+                    load_rect, cancel_rect = draw_load_menu(load_name_input)
+                    if load_rect.collidepoint(mouse_pos):
+                        if load_game(load_name_input):
+                            load_menu_visible = False
+                    elif cancel_rect.collidepoint(mouse_pos):
+                        load_menu_visible = False
+            elif event.type == pygame.KEYDOWN:
+                if save_name_prompt_visible:
+                    if event.key == pygame.K_ESCAPE:
+                        save_name_prompt_visible = False
+                        pending_quit = False
+                    elif event.key == pygame.K_BACKSPACE:
+                        save_name_input = save_name_input[:-1]
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        if save_game(save_name_input):
+                            save_name_prompt_visible = False
+                            if pending_quit:
+                                running = False
+                            pending_quit = False
+                    elif len(event.unicode) == 1 and event.unicode.isprintable() and len(save_name_input) < 24:
+                        save_name_input += event.unicode
+                elif load_menu_visible:
+                    if event.key == pygame.K_ESCAPE:
+                        load_menu_visible = False
+                    elif event.key == pygame.K_BACKSPACE:
+                        load_name_input = load_name_input[:-1]
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        if load_game(load_name_input):
+                            load_menu_visible = False
+                    elif len(event.unicode) == 1 and event.unicode.isprintable() and len(load_name_input) < 24:
+                        load_name_input += event.unicode
+                elif save_prompt_visible:
+                    if event.key == pygame.K_ESCAPE:
+                        save_prompt_visible = False
+                        pending_quit = False
+            continue
         
         elif event.type == pygame.MOUSEMOTION:
                                                                       
             if game_state == "main_menu":
-                play_button, how_to_button, about_button = draw_main_menu()
+                play_button, load_button, how_to_button, about_button = draw_main_menu()
                 play_button_hover = play_button.collidepoint(mouse_pos)
+                load_button_hover = load_button.collidepoint(mouse_pos)
                 how_to_button_hover = how_to_button.collidepoint(mouse_pos)
                 about_button_hover = about_button.collidepoint(mouse_pos)
             elif game_state in ["how_to_play", "about"]:
@@ -5732,10 +5979,14 @@ while running:
         
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if game_state == "main_menu":
-                play_button, how_to_button, about_button = draw_main_menu()
+                play_button, load_button, how_to_button, about_button = draw_main_menu()
                 if play_button.collidepoint(mouse_pos):
                     game_state = "playing"
-                    start_level_1()
+                    if not game_in_progress:
+                        start_level_1()
+                elif load_button.collidepoint(mouse_pos):
+                    load_menu_visible = True
+                    load_name_input = ""
                 elif how_to_button.collidepoint(mouse_pos):
                     game_state = "how_to_play"
                 elif about_button.collidepoint(mouse_pos):
@@ -5965,7 +6216,7 @@ while running:
                         
       
     if game_state == "main_menu":
-        play_button, how_to_button, about_button = draw_main_menu()
+        play_button, load_button, how_to_button, about_button = draw_main_menu()
     
     elif game_state == "how_to_play":
         back_button = draw_how_to_play()
@@ -6173,6 +6424,13 @@ while running:
         if hud_message_timer > 0:
             hud_message_timer = max(0, hud_message_timer - dt / 1000.0)
     
+    if save_prompt_visible:
+        draw_save_prompt()
+    elif save_name_prompt_visible:
+        draw_save_name_prompt(save_name_input)
+    elif load_menu_visible:
+        draw_load_menu(load_name_input)
+
     pygame.display.flip()
 
 pygame.quit()
