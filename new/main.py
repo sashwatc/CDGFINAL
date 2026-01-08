@@ -77,6 +77,11 @@ previous_room_coords = tuple(current_room_coords)
 player_facing = "right"  
 PLAYER_ANIM_SPEED = 0.08                                 
 player_frames = {}
+GUN_SPRITE_PATH = "objects/ak24.png"
+GUN_SPRITE_WIDTH = 70
+GUN_SPRITE_HEIGHT = 28
+GUN_OFFSET_X = 10
+GUN_OFFSET_Y = 8
 player_state = "idle"
 player_frame_index = 0
 player_frame_timer = 0.0
@@ -200,6 +205,7 @@ ASSETS_DIR = "assets"
 SOUNDS_DIR = os.path.join(ASSETS_DIR, "sounds")
 image_cache = {}
 sound_cache = {}
+weapon_image_cache = {}
 
 # Level 3 background map 
 
@@ -358,6 +364,17 @@ def load_image(name, width=None, height=None):
         pass
     image_cache[cache_key] = fallback
     return fallback
+
+def _get_ak24_sprite(direction):
+    """Load and cache the AK24 sprite, flipped for left facing."""
+    cache_key = f"ak24_{direction}_{GUN_SPRITE_WIDTH}x{GUN_SPRITE_HEIGHT}"
+    if cache_key in weapon_image_cache:
+        return weapon_image_cache[cache_key]
+    img = load_image(GUN_SPRITE_PATH, GUN_SPRITE_WIDTH, GUN_SPRITE_HEIGHT)
+    if direction == "left":
+        img = pygame.transform.flip(img, True, False)
+    weapon_image_cache[cache_key] = img
+    return img
 
 def load_smart_bg(level, row, col):
     """Return Surface for any level, or None if no file."""
@@ -3611,6 +3628,22 @@ def draw_player(surface, player_rect, dt, moving):
     frame_rect = frame.get_rect(center=player_rect.center)
     surface.blit(frame, frame_rect)
 
+def draw_player_gun(surface, player_rect):
+    """Draw the AK24 when the player has the basic firearm equipped."""
+    if not player_has_weapon or using_sword_weapon or using_laser_weapon:
+        return
+    direction = "left" if player_facing == "left" else "right"
+    gun = _get_ak24_sprite(direction)
+    if direction == "right":
+        gun_rect = gun.get_rect(
+            midleft=(player_rect.centerx + GUN_OFFSET_X, player_rect.centery + GUN_OFFSET_Y)
+        )
+    else:
+        gun_rect = gun.get_rect(
+            midright=(player_rect.centerx - GUN_OFFSET_X, player_rect.centery + GUN_OFFSET_Y)
+        )
+    surface.blit(gun, gun_rect)
+
 def draw_player_pointer(surface, player_rect):
     """Draw a small pointer anchored to the player's left side."""
     center_y = player_rect.centery
@@ -4780,6 +4813,7 @@ def _can_purchase_item(item_id):
 def handle_blacksmith_purchase(item_id):
     """Handle purchasing items from the blacksmith."""
     global player_has_weapon, current_ammo, max_ammo_count, health, max_health, inventory, weapon_level, armor_level
+    global using_sword_weapon, using_laser_weapon
     
     item = blacksmith_items[item_id]
     
@@ -4809,6 +4843,8 @@ def handle_blacksmith_purchase(item_id):
     if item_id == "weapon":
         item["purchased"] = True
         player_has_weapon = True
+        using_sword_weapon = False
+        using_laser_weapon = False
         current_ammo = max_ammo_count 
         set_message(f"Purchased {item['name']}! You can now shoot with SPACE.", (0, 255, 0), 3.0)
         quests["buy_weapon"]["complete"] = True
@@ -6679,6 +6715,7 @@ while running:
         except Exception:
             pass
         draw_player(screen, player_rect, dt, player_moving)
+        draw_player_gun(screen, player_rect)
         draw_player_sword(screen)
         draw_player_pointer(screen, player_rect)
         
