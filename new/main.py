@@ -72,6 +72,7 @@ player_rect = pygame.Rect(400, 400, 20, 25)
 PLAYER_SPRITE_WIDTH = 80
 PLAYER_SPRITE_HEIGHT = 100
 player_move_speed = 7
+player_stat_multiplier = 1.0
 current_room_coords = [0, 0, 0]
 previous_room_coords = tuple(current_room_coords)
 player_facing = "right"  
@@ -923,6 +924,24 @@ echoes_miniboss = None
 echoes_boss_defeated = False
 echoes_arena_locked = False
 echoes_rewards_dropped = False
+echoes_miniboss_projectiles = []
+echoes_player_frozen = False
+echoes_player_freeze_timer = 0.0
+echoes_player_frozen_pos = (0, 0)
+echoes_laser_timer = 0.0
+echoes_laser_active = False
+
+# Gorlock - Final Boss (Forgotten City)
+gorlock_boss = None
+gorlock_defeated = False
+gorlock_stage = 1
+gorlock_mace_state = None
+gorlock_mace_timer = 0.0
+gorlock_taunt_active = False
+gorlock_taunt_timer = 0.0
+gorlock_taunt_cd = 30.0
+gorlock_mace_projectiles = []
+gorlock_berserk = False
 
 kael_boss = None
 kael_defeated = False
@@ -2766,9 +2785,9 @@ def shoot_bullet():
         
         if dist > 0:
             bullet_speed = 20.0 if using_laser_weapon else 15.0
-            damage = 20 + (weapon_level * 5)  
+            damage = (20 + (weapon_level * 5)) * player_stat_multiplier
             if using_laser_weapon:
-                damage += 15
+                damage = damage + (15 * player_stat_multiplier)
             
             if using_laser_weapon:
                 bullet_color_main = (0, 255, 255)
@@ -2784,7 +2803,7 @@ def shoot_bullet():
                 "y": float(player_rect.centery),
                 "dx": (dx / dist) * bullet_speed,
                 "dy": (dy / dist) * bullet_speed,
-                "damage": damage,
+                "damage": int(damage),
                 "is_laser": using_laser_weapon,
                 "color_main": bullet_color_main,
                 "color_inner": bullet_color_inner,
@@ -2965,6 +2984,23 @@ def update_bullets(dt):
                         "A calm silence follows as the altar fades."
                     ], line_duration=3.0, on_complete=_to_sanctuary)
 
+        # Gorlock in Stage 2 is immune to bullets, only vulnerable to sword
+        if room_key == (2, 2, 1) and gorlock_boss and not gorlock_defeated:
+            if gorlock_boss["rect"].collidepoint(bullet["x"], bullet["y"]):
+                # In stage 1, take bullet damage; in stage 2, immune to bullets
+                if gorlock_stage == 1:
+                    gorlock_boss["hp"] -= bullet.get("damage", 0)
+                    bullets_to_remove.append(i)
+                elif gorlock_stage == 2:
+                    # Stage 2: immune to bullets
+                    set_message("Gorlock is immune to bullets in Stage 2! Use your sword!", (255, 150, 100), 1.5)
+                    bullets_to_remove.append(i)
+                    start_cutscene([
+                        "Kael falters, the relics pulsing with restored light.",
+                        "The final strike shatters the temporal distortion.",
+                        "A calm silence follows as the altar fades."
+                    ], line_duration=3.0, on_complete=_to_sanctuary)
+
         
         for d in drones:
             if tuple(d.get("room_key")) != room_key:
@@ -3030,7 +3066,7 @@ def update_player_sword(dt):
     sword_rect, _ = _get_player_sword_rect()
 
     if not player_sword_hit:
-        sword_damage = 18
+        sword_damage = int(18 * player_stat_multiplier)
         room_key = tuple(current_room_coords)
 
         state = goblin_rooms.get(room_key)
@@ -3592,25 +3628,32 @@ def draw_player(surface, player_rect, dt, moving):
         img = load_player_image(direction)
         img_rect = img.get_rect(center=player_rect.center)
         surface.blit(img, img_rect)
-        return
-    
-    if state != player_state:
-        player_state = state
-        player_frame_index = 0
-        player_frame_timer = 0.0
-    
-    if moving:
-        player_frame_timer += dt / 1000.0
-        if player_frame_timer >= PLAYER_ANIM_SPEED:
-            player_frame_timer = 0.0
-            player_frame_index = (player_frame_index + 1) % len(frames)
     else:
-        player_frame_index = 0
-        player_frame_timer = 0.0
+        if state != player_state:
+            player_state = state
+            player_frame_index = 0
+            player_frame_timer = 0.0
+        
+        if moving:
+            player_frame_timer += dt / 1000.0
+            if player_frame_timer >= PLAYER_ANIM_SPEED:
+                player_frame_timer = 0.0
+                player_frame_index = (player_frame_index + 1) % len(frames)
+        else:
+            player_frame_index = 0
+            player_frame_timer = 0.0
+        
+        frame = frames[player_frame_index % len(frames)]
+        frame_rect = frame.get_rect(center=player_rect.center)
+        surface.blit(frame, frame_rect)
     
-    frame = frames[player_frame_index % len(frames)]
-    frame_rect = frame.get_rect(center=player_rect.center)
-    surface.blit(frame, frame_rect)
+    # Draw freeze effect if player is frozen
+    if echoes_player_frozen:
+        pygame.draw.rect(surface, (100, 200, 255), player_rect, 3)
+        # Draw "FROZEN" text
+        frozen_text = font.render("FROZEN", True, (100, 200, 255))
+        text_rect = frozen_text.get_rect(center=(player_rect.centerx, player_rect.top - 30))
+        surface.blit(frozen_text, text_rect)
 
 def draw_player_pointer(surface, player_rect):
     """Draw a small pointer anchored to the player's left side."""
@@ -3999,7 +4042,7 @@ def update_lava_scene(dt):
 
 def spawn_echoes_miniboss():
     """Spawn the Hall of Echoes miniboss."""
-    global echoes_miniboss, echoes_arena_locked
+    global echoes_miniboss, echoes_arena_locked, echoes_miniboss_projectiles, echoes_player_frozen, echoes_player_freeze_timer, echoes_laser_timer, echoes_laser_active
     echoes_miniboss = {
         "rect": pygame.Rect(340, 260, 120, 140),
         "hp": 220,
@@ -4007,6 +4050,11 @@ def spawn_echoes_miniboss():
         "speed": 120,
         "attack_cd": 2.0,
     }
+    echoes_miniboss_projectiles = []
+    echoes_player_frozen = False
+    echoes_player_freeze_timer = 0.0
+    echoes_laser_timer = 0.0
+    echoes_laser_active = False
     echoes_arena_locked = True
     set_message("The Hall of Echoes seals itself...", (200, 160, 255), 2.5)
 
@@ -4014,6 +4062,7 @@ def update_echoes_miniboss(dt):
     """Update the Hall of Echoes miniboss."""
     global echoes_miniboss, echoes_boss_defeated, echoes_arena_locked
     global player_electrified_timer, health
+    global echoes_miniboss_projectiles, echoes_player_frozen, echoes_player_freeze_timer, echoes_laser_timer, echoes_laser_active, echoes_player_frozen_pos
     if not echoes_miniboss or echoes_boss_defeated:
         return
     room_key = tuple(current_room_coords)
@@ -4023,6 +4072,8 @@ def update_echoes_miniboss(dt):
         return
     dt_sec = dt / 1000.0
     speed_factor = get_time_slow_factor()
+    
+    # Move boss towards player
     dx = player_rect.centerx - echoes_miniboss["rect"].centerx
     dy = player_rect.centery - echoes_miniboss["rect"].centery
     dist = math.hypot(dx, dy)
@@ -4031,17 +4082,112 @@ def update_echoes_miniboss(dt):
         echoes_miniboss["rect"].x += int((dx / dist) * step)
         echoes_miniboss["rect"].y += int((dy / dist) * step)
 
+    # Attack pattern: shoot multiple timedmg projectiles (locking orbs)
     echoes_miniboss["attack_cd"] -= dt_sec * speed_factor
     if echoes_miniboss["attack_cd"] <= 0:
         echoes_miniboss["attack_cd"] = 2.5
-        player_electrified_timer = 2.5
-        health = max(0, health - 6)
-        set_message("Time distortion hits you!", (200, 140, 255), 1.6)
+        # Spawn a spread of locking orbs aimed roughly at the player
+        if dist > 0:
+            proj_speed = 250
+            # configuration: number of orbs and total spread in degrees
+            num_orbs = 3
+            spread_deg = 20
+            max_active_orbs = 12
+            # only spawn if we don't already have too many active orbs
+            if len(echoes_miniboss_projectiles) < max_active_orbs:
+                base_angle = math.atan2(dy, dx)
+                spread_rad = math.radians(spread_deg)
+                for i in range(num_orbs):
+                    # distribute angles around the base_angle
+                    if num_orbs > 1:
+                        t = i / (num_orbs - 1)
+                        angle = base_angle - spread_rad / 2 + t * spread_rad
+                    else:
+                        angle = base_angle
+                    proj_vx = math.cos(angle) * proj_speed
+                    proj_vy = math.sin(angle) * proj_speed
+                    echoes_miniboss_projectiles.append({
+                        "x": echoes_miniboss["rect"].centerx,
+                        "y": echoes_miniboss["rect"].centery,
+                        "vx": proj_vx,
+                        "vy": proj_vy,
+                        "lifetime": 5.0,
+                        "type": "timedmg"
+                    })
+        set_message("Echo Warden fires locking orbs!", (200, 140, 255), 1.6)
+
+    # Update projectiles
+    projectiles_to_remove = []
+    for i, proj in enumerate(echoes_miniboss_projectiles):
+        proj["x"] += proj["vx"] * dt_sec * speed_factor
+        proj["y"] += proj["vy"] * dt_sec * speed_factor
+        proj["lifetime"] -= dt_sec * speed_factor
+        
+        # Check collision with player
+        if proj["lifetime"] > 0:
+            proj_rect = pygame.Rect(proj["x"] - 8, proj["y"] - 8, 16, 16)
+            if player_rect.colliderect(proj_rect):
+                # Player hit by timedmg - freeze and set up laser
+                echoes_player_frozen = True
+                echoes_player_freeze_timer = 2.0
+                echoes_player_frozen_pos = (player_rect.centerx, player_rect.centery)
+                echoes_laser_timer = 1.0  # First laser fires after 1 second
+                echoes_laser_active = True
+                set_message("Frozen! Laser incoming!", (255, 100, 100), 1.0)
+                projectiles_to_remove.append(i)
+        
+        # Remove expired projectiles
+        if proj["lifetime"] <= 0 or proj["x"] < -50 or proj["x"] > SCREEN_WIDTH + 50 or proj["y"] < -50 or proj["y"] > SCREEN_HEIGHT + 50:
+            if i not in projectiles_to_remove:
+                projectiles_to_remove.append(i)
+    
+    for i in sorted(projectiles_to_remove, reverse=True):
+        echoes_miniboss_projectiles.pop(i)
 
     if echoes_miniboss["hp"] <= 0:
         echoes_boss_defeated = True
         echoes_arena_locked = False
         set_message("Echo Warden defeated!", (255, 220, 150), 2.5)
+
+def update_echoes_freeze_and_laser(dt):
+    """Update the freeze effect and laser attack for Hall of Echoes boss."""
+    global echoes_player_frozen, echoes_player_freeze_timer, echoes_laser_timer, echoes_laser_active
+    global player_rect, health
+    
+    if not echoes_player_frozen:
+        return
+    
+    room_key = tuple(current_room_coords)
+    if room_key != (2, 0, 1):
+        return
+    
+    dt_sec = dt / 1000.0
+    speed_factor = get_time_slow_factor()
+    
+    # Update freeze timer (2 seconds total freeze)
+    echoes_player_freeze_timer -= dt_sec * speed_factor
+    
+    # Force player to stay at frozen position
+    player_rect.centerx = echoes_player_frozen_pos[0]
+    player_rect.centery = echoes_player_frozen_pos[1]
+    
+    # Shoot laser every 1 second during the freeze
+    if echoes_laser_active:
+        echoes_laser_timer -= dt_sec * speed_factor
+        
+        # Laser fires and deals 25 damage
+        if echoes_laser_timer <= 0:
+            health = max(0, health - 25)
+            set_message("LASER HIT! 25 damage!", (255, 0, 0), 1.0)
+            echoes_laser_timer = 1.0  # Reset timer to fire again in 1 second
+    
+    # End freeze effect when timer expires (2 seconds)
+    if echoes_player_freeze_timer <= 0:
+        echoes_player_frozen = False
+        echoes_laser_active = False
+        echoes_player_freeze_timer = 0.0
+        echoes_laser_timer = 0.0
+        echoes_laser_timer = 0.0
 
 def draw_echoes_miniboss(surface):
     """Draw the Hall of Echoes miniboss."""
@@ -4059,6 +4205,203 @@ def draw_echoes_miniboss(surface):
     pygame.draw.rect(surface, (80, 0, 0), (bar_x, bar_y, bar_w, 6))
     hp_ratio = max(0, echoes_miniboss["hp"]) / max(1, echoes_miniboss["max_hp"])
     pygame.draw.rect(surface, (255, 80, 120), (bar_x, bar_y, int(bar_w * hp_ratio), 6))
+    
+    # Draw timedmg projectiles
+    for proj in echoes_miniboss_projectiles:
+        if proj["lifetime"] > 0:
+            proj_img = load_image("projectiles/timedmg.png", 16, 16)
+            if proj_img:
+                surface.blit(proj_img, (int(proj["x"]) - 8, int(proj["y"]) - 8))
+            else:
+                pygame.draw.circle(surface, (0, 255, 255), (int(proj["x"]), int(proj["y"])), 8)
+    
+    # Draw laser effect if active
+    if echoes_laser_active and echoes_player_frozen:
+        pygame.draw.line(surface, (255, 0, 0), echoes_miniboss["rect"].center, echoes_player_frozen_pos, 4)
+        pygame.draw.circle(surface, (255, 100, 100), echoes_player_frozen_pos, 20, 2)
+    
+def spawn_gorlock_boss():
+    """Spawn Gorlock the Time Eater in the Forgotten City."""
+    global gorlock_boss, gorlock_defeated, gorlock_stage, gorlock_mace_state, gorlock_mace_timer, gorlock_taunt_active, gorlock_taunt_timer, gorlock_taunt_cd, gorlock_berserk, gorlock_mace_projectiles
+    gorlock_stage = 1
+    gorlock_boss = {
+        "rect": pygame.Rect(300, 160, 200, 260),
+        "hp": 6000,
+        "max_hp": 6000,
+        "speed": int(player_move_speed * 1.7),
+        "mace_cd": 0.0,
+        "_taunt_timer": 30.0,
+    }
+    gorlock_defeated = False
+    gorlock_mace_state = None
+    gorlock_mace_timer = 0.0
+    gorlock_taunt_active = False
+    gorlock_taunt_timer = 0.0
+    gorlock_mace_projectiles = []
+    gorlock_berserk = False
+    set_message("Gorlock, the Time Eater has appeared!", (200, 100, 100), 3.0)
+
+def update_gorlock_boss(dt):
+    """Update Gorlock behaviour and attacks."""
+    global gorlock_boss, gorlock_defeated, gorlock_stage, gorlock_mace_state, gorlock_mace_timer, gorlock_taunt_active, gorlock_taunt_timer, gorlock_mace_projectiles, gorlock_berserk, health, player_stat_multiplier
+    if not gorlock_boss or gorlock_defeated:
+        return
+    room_key = tuple(current_room_coords)
+    if room_key != (2, 2, 1):
+        return
+    if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or maze_visible or race_active or crafting_visible or temple_puzzle_visible or temple_shop_visible:
+        return
+    
+    dt_sec = dt / 1000.0
+    speed_factor = get_time_slow_factor()
+
+    # Movement - approach player
+    dx = player_rect.centerx - gorlock_boss["rect"].centerx
+    dy = player_rect.centery - gorlock_boss["rect"].centery
+    dist = math.hypot(dx, dy)
+    if dist > 10:
+        boss_speed = gorlock_boss.get("speed", int(player_move_speed * 1.7))
+        step = boss_speed * speed_factor * dt_sec
+        gorlock_boss["rect"].x += int((dx / dist) * step)
+        gorlock_boss["rect"].y += int((dy / dist) * step)
+
+    # Stage transition
+    if gorlock_stage == 1 and gorlock_boss["hp"] <= 0:
+        gorlock_stage = 2
+        gorlock_boss["hp"] = 6000
+        gorlock_boss["max_hp"] = 6000
+        gorlock_boss["mace_cd"] = 0.0
+        set_message("Gorlock enrages and enters Stage 2!", (255, 120, 100), 3.0)
+        return
+
+    # Berserk when stage2 hp <= 1000
+    if gorlock_stage == 2 and not gorlock_berserk and gorlock_boss["hp"] <= 1000:
+        gorlock_berserk = True
+        gorlock_boss["speed"] = int(gorlock_boss.get("speed", int(player_move_speed * 1.7)) * 1.25)
+        gorlock_boss["mace_cd"] = max(0.5, gorlock_boss.get("mace_cd", 5.0) * 0.75)
+        set_message("Gorlock goes berserk!", (255, 50, 50), 2.5)
+
+    # Mace cooldown decrement
+    if "mace_cd" not in gorlock_boss:
+        gorlock_boss["mace_cd"] = 0.0
+    gorlock_boss["mace_cd"] -= dt_sec * speed_factor
+    
+    # Trigger mace swing when cooldown expires
+    if gorlock_boss["mace_cd"] <= 0:
+        gorlock_boss["mace_cd"] = 6.0 if gorlock_stage == 1 else 5.0
+        gorlock_mace_state = "swing"
+        gorlock_mace_timer = 0.8
+        set_message("Gorlock winds up his massive mace!", (255, 140, 120), 1.2)
+
+    # Handle mace swing - apply damage during swing
+    if gorlock_mace_state == "swing":
+        gorlock_mace_timer -= dt_sec * speed_factor
+        # Check if player is hit by the swing
+        swing_rect = pygame.Rect(gorlock_boss["rect"].centerx - 150, gorlock_boss["rect"].centery - 120, 300, 240)
+        if player_rect.colliderect(swing_rect):
+            health = max(0, health - 45)
+            set_message("Hit by Gorlock's mace! -45 HP", (255, 100, 80), 1.2)
+        if gorlock_mace_timer <= 0:
+            gorlock_mace_state = None
+
+    # Stage 2: throw mace occasionally
+    if gorlock_stage == 2 and random.random() < 0.08:
+        if dist > 0:
+            angle = math.atan2(dy, dx)
+            gorlock_mace_projectiles.append({
+                "x": float(gorlock_boss["rect"].centerx),
+                "y": float(gorlock_boss["rect"].centery),
+                "vx": math.cos(angle) * 320,
+                "vy": math.sin(angle) * 320,
+                "lifetime": 6.0,
+                "damage": 30
+            })
+            set_message("Gorlock hurls his mace at you!", (255, 120, 80), 1.0)
+
+    # Update mace projectiles
+    proj_remove = []
+    for i, proj in enumerate(gorlock_mace_projectiles):
+        proj["x"] += proj["vx"] * dt_sec * speed_factor
+        proj["y"] += proj["vy"] * dt_sec * speed_factor
+        proj["lifetime"] -= dt_sec * speed_factor
+        
+        if proj["lifetime"] > 0:
+            proj_rect = pygame.Rect(int(proj["x"]) - 12, int(proj["y"]) - 12, 24, 24)
+            if player_rect.colliderect(proj_rect):
+                health = max(0, health - 30)
+                set_message("Hit by thrown mace! -30 HP", (255, 80, 60), 1.0)
+                proj_remove.append(i)
+        
+        if proj["lifetime"] <= 0:
+            proj_remove.append(i)
+    
+    for i in sorted(proj_remove, reverse=True):
+        if 0 <= i < len(gorlock_mace_projectiles):
+            gorlock_mace_projectiles.pop(i)
+
+    # Taunt handling
+    if "_taunt_timer" not in gorlock_boss:
+        gorlock_boss["_taunt_timer"] = 30.0
+    gorlock_boss["_taunt_timer"] -= dt_sec * speed_factor
+    if gorlock_boss["_taunt_timer"] <= 0:
+        gorlock_boss["_taunt_timer"] = 30.0
+        gorlock_taunt_active = True
+        gorlock_taunt_timer = 5.0
+        player_stat_multiplier = 0.5
+        set_message("Gorlock taunts! Your strength fades!", (200, 60, 60), 2.0)
+
+    # Update taunt timer
+    if gorlock_taunt_active:
+        gorlock_taunt_timer -= dt_sec * speed_factor
+        if gorlock_taunt_timer <= 0:
+            gorlock_taunt_active = False
+            player_stat_multiplier = 1.0
+
+    # Check defeat
+    if gorlock_boss["hp"] <= 0 and gorlock_stage == 2:
+        gorlock_defeated = True
+        set_message("Gorlock the Time Eater is defeated!", (200, 255, 200), 4.0)
+
+def draw_gorlock_boss(surface):
+    """Draw Gorlock and his effects."""
+    if not gorlock_boss or gorlock_defeated:
+        return
+    room_key = tuple(current_room_coords)
+    if room_key != (2, 2, 1):
+        return
+    rect = gorlock_boss["rect"]
+    # Load and draw Gorlock sprite
+    gorlock_sprite = load_image("npcs/gorlock.png", rect.width, rect.height)
+    if gorlock_sprite:
+        surface.blit(gorlock_sprite, rect)
+    else:
+        pygame.draw.rect(surface, (80, 20, 20), rect)
+    
+    # Draw HP bar
+    bar_w = rect.width
+    bar_x = rect.x
+    bar_y = rect.y - 14
+    pygame.draw.rect(surface, (40, 0, 0), (bar_x, bar_y, bar_w, 8))
+    hp_ratio = max(0, gorlock_boss["hp"]) / max(1, gorlock_boss["max_hp"])
+    pygame.draw.rect(surface, (200, 40, 40), (bar_x, bar_y, int(bar_w * hp_ratio), 8))
+    
+    # Draw mace projectiles with sprite
+    mace_sprite = load_image("projectiles/mace.png", 24, 24)
+    for proj in gorlock_mace_projectiles:
+        if proj["lifetime"] > 0:
+            proj_rect = pygame.Rect(int(proj["x"]) - 12, int(proj["y"]) - 12, 24, 24)
+            if mace_sprite:
+                surface.blit(mace_sprite, proj_rect)
+            else:
+                pygame.draw.circle(surface, (140, 80, 40), (int(proj["x"]), int(proj["y"])), 12)
+
+def draw_screen_tint(surface):
+    """Draw screen tint for Gorlock taunt."""
+    if gorlock_taunt_active:
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        alpha = int(120)
+        overlay.fill((180, 0, 0, alpha))
+        surface.blit(overlay, (0, 0))
 
 def spawn_kael_boss():
     """Spawn Kael in the Temporal Altar."""
@@ -4203,11 +4546,13 @@ def draw_level3_room_extras(surface, room_key):
 
     if room_key == (2, 1, 2):
         draw_kael_boss(surface)
+    if room_key == (2, 2, 1):
+        draw_gorlock_boss(surface)
 
 def handle_room_entry(new_room, old_room):
     """Trigger one-time events when entering Level 3 rooms."""
     global kael_origin_revealed, echoes_miniboss, echoes_boss_defeated, kael_boss
-    if new_room == (2, 2, 1) and not kael_origin_revealed:
+    if new_room == (2, 1, 1) and not kael_origin_revealed:
         kael_origin_revealed = True
         start_cutscene([
             "Sage Olan: The city remembers Kael before he was a tyrant.",
@@ -4216,6 +4561,10 @@ def handle_room_entry(new_room, old_room):
             "Sage Olan: You must reach his altar and break the cycle."
         ], line_duration=3.0)
         set_message("Kael's origin revealed.", (200, 220, 255), 2.0)
+
+    # Spawn final boss Gorlock in Forgotten City
+    if new_room == (2, 2, 1) and not gorlock_defeated and gorlock_boss is None:
+        spawn_gorlock_boss()
 
     if new_room == (2, 0, 1) and not echoes_boss_defeated and echoes_miniboss is None:
         spawn_echoes_miniboss()
@@ -6588,7 +6937,7 @@ while running:
             player_facing = "left"
         
         
-        if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or safe_visible or maze_visible or race_active or temple_puzzle_visible or crafting_visible or temple_shop_visible:
+        if dialogue_active or cutscene_active or hud_visible or quest_log_visible or upgrade_shop_visible or safe_visible or maze_visible or race_active or temple_puzzle_visible or crafting_visible or temple_shop_visible or echoes_player_frozen:
             mv_x, mv_y = 0, 0
 
         if race_active:
@@ -6613,7 +6962,9 @@ while running:
         update_cave_scene()
         update_lava_scene(dt)
         update_echoes_miniboss(dt)
+        update_echoes_freeze_and_laser(dt)
         update_kael_boss(dt)
+        update_gorlock_boss(dt)
         
                                        
         if tuple(current_room_coords) == (0, 2, 0) and boss and boss["alive"]:
@@ -6690,6 +7041,7 @@ while running:
         draw_health_bar(screen)
             
                  
+        draw_screen_tint(screen)
         draw_hud(screen) 
         draw_minimap(screen, *current_room_coords)
         draw_quest_log(screen)
