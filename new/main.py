@@ -80,8 +80,10 @@ player_frames = {}
 GUN_SPRITE_PATH = "objects/ak24.png"
 GUN_SPRITE_WIDTH = 70
 GUN_SPRITE_HEIGHT = 28
-GUN_OFFSET_X = 10
-GUN_OFFSET_Y = 8
+GUN_OFFSET_X = 4
+GUN_OFFSET_Y = 10
+GUN_GRIP_X = 14
+GUN_GRIP_Y = 14
 player_state = "idle"
 player_frame_index = 0
 player_frame_timer = 0.0
@@ -3632,17 +3634,18 @@ def draw_player_gun(surface, player_rect):
     """Draw the AK24 when the player has the basic firearm equipped."""
     if not player_has_weapon or using_sword_weapon or using_laser_weapon:
         return
-    direction = "left" if player_facing == "left" else "right"
-    gun = _get_ak24_sprite(direction)
-    if direction == "right":
-        gun_rect = gun.get_rect(
-            midleft=(player_rect.centerx + GUN_OFFSET_X, player_rect.centery + GUN_OFFSET_Y)
-        )
-    else:
-        gun_rect = gun.get_rect(
-            midright=(player_rect.centerx - GUN_OFFSET_X, player_rect.centery + GUN_OFFSET_Y)
-        )
-    surface.blit(gun, gun_rect)
+    dx = mouse_x - player_rect.centerx
+    dy = mouse_y - player_rect.centery
+    angle_deg = math.degrees(math.atan2(dy, dx)) if (dx or dy) else 0.0
+    gun = _get_ak24_sprite("right")
+    rotated = pygame.transform.rotate(gun, -angle_deg)
+    arm_x = player_rect.centerx + GUN_OFFSET_X
+    arm_y = player_rect.centery + GUN_OFFSET_Y
+    # Align the gun grip to the player's arm anchor after rotation.
+    grip_offset = pygame.math.Vector2(GUN_GRIP_X - gun.get_width() / 2, GUN_GRIP_Y - gun.get_height() / 2)
+    rotated_offset = grip_offset.rotate(-angle_deg)
+    gun_rect = rotated.get_rect(center=(arm_x - rotated_offset.x, arm_y - rotated_offset.y))
+    surface.blit(rotated, gun_rect)
 
 def draw_player_pointer(surface, player_rect):
     """Draw a small pointer anchored to the player's left side."""
